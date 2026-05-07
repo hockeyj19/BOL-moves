@@ -2,11 +2,11 @@ import os
 import time
 import json
 import datetime
+from playwright.sync_api import sync_playwright
 import requests
 from bs4 import BeautifulSoup
-import re
 
-print("🚀 UFC BetOnline Monitor started (LIGHT version - STRONG PARSER)")
+print("🚀 UFC BetOnline Monitor started (Playwright version)")
 
 # ========================= CONFIG =========================
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -17,62 +17,51 @@ POLL_INTERVAL_SECONDS = 600
 MIN_MOVEMENT_POINTS = 10
 # ========================================================
 
-if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-    print("❌ Missing Telegram credentials!")
-    raise ValueError("Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID")
-
-headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-}
+headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
 def scrape_ufc_moneyline():
     print(f"🌐 Scraping at {datetime.datetime.now().strftime('%H:%M:%S')}")
-    try:
-        r = requests.get(URL, headers=headers, timeout=20)
-        r.raise_for_status()
-        print(f"✅ Page loaded ({len(r.text):,} characters)")
-    except Exception as e:
-        print(f"❌ Request failed: {e}")
-        return []
-
-    soup = BeautifulSoup(r.text, "html.parser")
     fights = []
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_extra_http_headers(headers)
+        page.goto(URL, wait_until="networkidle", timeout=60000)
+        time.sleep(8)  # let JS load fights
 
-    odds_pattern = re.compile(r'([+-]\d{2,4})')
+        html = page.content()
+        soup = BeautifulSoup(html, "html.parser")
+        browser.close()
 
-    # Stronger search: look for larger blocks containing "UFC"
-    for block in soup.find_all(string=lambda text: text and "UFC" in text.upper()):
-        try:
-            block_text = str(block).strip()
-            odds_in_block = odds_pattern.findall(block_text)
-            if len(odds_in_block) >= 2:
-                # Extract fighter names (long alphabetic sequences)
-                names = re.findall(r'([A-Za-z][A-Za-z\s\.\'-]{5,40})', block_text)
-                if len(names) >= 2:
-                    fighter1 = names[0].strip()
-                    fighter2 = names[1].strip()
+        rows = soup.select("div, section, tr, li")
+        for row in rows:
+            try:
+                row_text = row.get_text(strip=True)
+                if "UFC" not in row_text.upper():
+                    continue
+
+                # Extract fighter names and odds
+                names = [t.strip() for t in row_text.split() if len(t) > 4 and t[0].isalpha()]
+                odds = [o for o in row_text.split() if o.startswith(('+', '-')) and o[1:].isdigit()]
+
+                if len(names) >= 2 and len(odds) >= 2:
+                    fighter1, fighter2 = names[0], names[1]
                     fight_key = f"{fighter1} vs {fighter2}"
                     fights.append({
                         "fight": fight_key,
                         "fighter1": fighter1,
-                        "fighter1_odds": odds_in_block[0],
+                        "fighter1_odds": odds[0],
                         "fighter2": fighter2,
-                        "fighter2_odds": odds_in_block[1],
+                        "fighter2_odds": odds[1],
                         "timestamp": datetime.datetime.now().isoformat()
                     })
-                    print(f"✅ Found fight: {fight_key} | {odds_in_block[0]} vs {odds_in_block[1]}")
-        except:
-            continue
+            except:
+                continue
 
     print(f"✅ Scraped {len(fights)} potential UFC fights")
-    if not fights:
-        print("🔍 DEBUG: Still 0 fights - dumping sample UFC text...")
-        for block in list(soup.find_all(string=lambda text: text and "UFC" in text.upper()))[:5]:
-            print("   Sample:", str(block).strip()[:200])
-
     return fights
 
-# ====================== Rest of code (unchanged) ======================
+# ====================== Rest of code ======================
 def load_history():
     try:
         with open(DATA_FILE, "r") as f:
