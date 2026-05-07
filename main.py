@@ -40,13 +40,13 @@ def scrape_ufc_moneyline():
 
     odds_pattern = re.compile(r'([+-]\d{2,4})')
 
-    # Look for any text block containing "UFC" and at least 2 odds
+    # Stronger search: look for larger blocks containing "UFC"
     for block in soup.find_all(string=lambda text: text and "UFC" in text.upper()):
         try:
             block_text = str(block).strip()
             odds_in_block = odds_pattern.findall(block_text)
             if len(odds_in_block) >= 2:
-                # Extract fighter names (long sequences of letters, spaces, apostrophes)
+                # Extract fighter names (long alphabetic sequences)
                 names = re.findall(r'([A-Za-z][A-Za-z\s\.\'-]{5,40})', block_text)
                 if len(names) >= 2:
                     fighter1 = names[0].strip()
@@ -60,18 +60,19 @@ def scrape_ufc_moneyline():
                         "fighter2_odds": odds_in_block[1],
                         "timestamp": datetime.datetime.now().isoformat()
                     })
+                    print(f"✅ Found fight: {fight_key} | {odds_in_block[0]} vs {odds_in_block[1]}")
         except:
             continue
 
     print(f"✅ Scraped {len(fights)} potential UFC fights")
-    if fights:
-        print("✅ First fight detected:", fights[0]["fight"], fights[0]["fighter1_odds"], fights[0]["fighter2_odds"])
-    else:
-        print("🔍 Still no fights - page structure may have changed")
+    if not fights:
+        print("🔍 DEBUG: Still 0 fights - dumping sample UFC text...")
+        for block in list(soup.find_all(string=lambda text: text and "UFC" in text.upper()))[:5]:
+            print("   Sample:", str(block).strip()[:200])
 
     return fights
 
-# ====================== Rest of code ======================
+# ====================== Rest of code (unchanged) ======================
 def load_history():
     try:
         with open(DATA_FILE, "r") as f:
@@ -129,12 +130,6 @@ if __name__ == "__main__":
             for msg in movements:
                 print(msg)
                 send_telegram(msg)
-            save_history(current_fights)
-        else:
-            print("⚠️ No fights found this cycle")
-
-        print(f"⏳ Sleeping {POLL_INTERVAL_SECONDS//60} minutes...")
-        time.sleep(POLL_INTERVAL_SECONDS)                send_telegram(msg)
             save_history(current_fights)
         else:
             print("⚠️ No fights found this cycle")
