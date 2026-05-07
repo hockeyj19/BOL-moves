@@ -1,6 +1,4 @@
-FROM python:3.12-slim
-
-ENV PYTHONUNBUFFERED=1
+FROM mcr.microsoft.com/playwright/python:v1.49.0-noble
 
 WORKDIR /app
 
