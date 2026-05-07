@@ -5,7 +5,6 @@ import datetime
 from playwright.sync_api import sync_playwright
 import requests
 from bs4 import BeautifulSoup
-from playwright_stealth import stealth_sync
 
 # ========================= CONFIG =========================
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -48,7 +47,6 @@ def get_playwright_page():
     browser = playwright.chromium.launch(headless=True)
     context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
     page = context.new_page()
-    stealth_sync(page)
     return playwright, browser, context, page
 
 def scrape_ufc_moneyline(page):
@@ -136,7 +134,7 @@ def send_telegram(message):
         print("Telegram error:", e)
 
 if __name__ == "__main__":
-    print("🚀 UFC BetOnline Monitor started!")
+    print("🚀 UFC BetOnline Monitor started (stealth removed)!")
     pw, browser, context, page = get_playwright_page()
 
     try:
