@@ -6,7 +6,7 @@ import requests
 from bs4 import BeautifulSoup
 import re
 
-print("🚀 UFC BetOnline Monitor started (LIGHT version - STRONG PARSER)")
+print("🚀 UFC BetOnline Monitor started (LIGHT version - DEBUG MODE)")
 
 # ========================= CONFIG =========================
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -22,7 +22,7 @@ if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
     raise ValueError("Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID")
 
 headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
 }
 
 def scrape_ufc_moneyline():
@@ -36,16 +36,37 @@ def scrape_ufc_moneyline():
         return []
 
     soup = BeautifulSoup(r.text, "html.parser")
-    fights = []
+    
+    # === DEBUG INFO ===
+    page_text = r.text.lower()
+    has_ufc = "ufc" in page_text
+    print(f"📊 Does the page contain 'UFC'? → {has_ufc}")
+
+    ufc_blocks = soup.find_all(string=lambda text: text and "UFC" in text.upper())
+    print(f"📊 Found {len(ufc_blocks)} text blocks containing 'UFC'")
 
     odds_pattern = re.compile(r'([+-]\d{2,4})')
+    all_odds = odds_pattern.findall(r.text)
+    print(f"📊 Found {len(all_odds)} potential American odds on the entire page")
 
-    for block in soup.find_all(string=lambda text: text and "UFC" in text.upper()):
+    # Sample of page content near UFC
+    if ufc_blocks:
+        print("🔍 Sample UFC content found:")
+        for block in ufc_blocks[:3]:
+            print("   →", block.strip()[:150])
+
+    # Try to scrape fights
+    fights = []
+    rows = soup.select("div, section, tr, li, span")
+    for row in rows:
         try:
-            block_text = str(block).strip()
-            odds_in_block = odds_pattern.findall(block_text)
-            if len(odds_in_block) >= 2:
-                names = re.findall(r'([A-Za-z][A-Za-z\s\.\'-]{5,40})', block_text)
+            row_text = row.get_text(strip=True)
+            if "UFC" not in row_text.upper():
+                continue
+
+            odds_in_row = odds_pattern.findall(row_text)
+            if len(odds_in_row) >= 2:
+                names = re.findall(r'([A-Za-z\s\.\'-]{5,35})', row_text)
                 if len(names) >= 2:
                     fighter1 = names[0].strip()
                     fighter2 = names[1].strip()
@@ -53,24 +74,21 @@ def scrape_ufc_moneyline():
                     fights.append({
                         "fight": fight_key,
                         "fighter1": fighter1,
-                        "fighter1_odds": odds_in_block[0],
+                        "fighter1_odds": odds_in_row[0],
                         "fighter2": fighter2,
-                        "fighter2_odds": odds_in_block[1],
+                        "fighter2_odds": odds_in_row[1],
                         "timestamp": datetime.datetime.now().isoformat()
                     })
-                    print(f"✅ Found fight: {fight_key} | {odds_in_block[0]} vs {odds_in_block[1]}")
         except:
             continue
 
     print(f"✅ Scraped {len(fights)} potential UFC fights")
-    if not fights:
-        print("🔍 DEBUG: Still 0 fights - dumping sample UFC text...")
-        for block in list(soup.find_all(string=lambda text: text and "UFC" in text.upper()))[:5]:
-            print("   Sample:", str(block).strip()[:200])
+    if len(fights) == 0:
+        print("🔍 DEBUG: No fights detected - page is likely JavaScript heavy")
 
     return fights
 
-# ====================== Rest of code ======================
+# ====================== Rest of the code ======================
 def load_history():
     try:
         with open(DATA_FILE, "r") as f:
