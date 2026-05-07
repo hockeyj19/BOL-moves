@@ -6,7 +6,7 @@ import requests
 from bs4 import BeautifulSoup
 import re
 
-print("🚀 UFC BetOnline Monitor started (LIGHT version)")
+print("🚀 UFC BetOnline Monitor started (LIGHT version - DEBUG MODE)")
 
 # ========================= CONFIG =========================
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -36,34 +36,40 @@ def scrape_ufc_moneyline():
         return []
 
     soup = BeautifulSoup(r.text, "html.parser")
-    fights = []
+    
+    # === DEBUG INFO ===
+    page_text = r.text.lower()
+    has_ufc = "ufc" in page_text
+    print(f"📊 Does the page contain 'UFC'? → {has_ufc}")
 
-    # Improved detection: look for odds first
+    ufc_blocks = soup.find_all(string=lambda text: text and "UFC" in text.upper())
+    print(f"📊 Found {len(ufc_blocks)} text blocks containing 'UFC'")
+
     odds_pattern = re.compile(r'([+-]\d{2,4})')
     all_odds = odds_pattern.findall(r.text)
+    print(f"📊 Found {len(all_odds)} potential American odds on the entire page")
 
-    print(f"📊 Found {len(all_odds)} potential odds numbers on the page")
+    # Sample of page content near UFC
+    if ufc_blocks:
+        print("🔍 Sample UFC content found:")
+        for block in ufc_blocks[:3]:  # first 3 only
+            print("   →", block.strip()[:150])
 
-    # Try to find fights with broader logic
-    rows = soup.find_all(string=lambda text: text and "UFC" in text.upper())
-    print(f"📊 Found {len(rows)} text blocks containing 'UFC'")
-
-    # Fallback broad search
+    # Try to scrape fights
+    fights = []
     rows = soup.select("div, section, tr, li, span")
-
     for row in rows:
         try:
             row_text = row.get_text(strip=True)
-            if not row_text or "UFC" not in row_text.upper():
+            if "UFC" not in row_text.upper():
                 continue
 
-            # Look for American odds in this row
             odds_in_row = odds_pattern.findall(row_text)
             if len(odds_in_row) >= 2:
-                # Try to extract fighter names
-                names = re.findall(r'([A-Za-z\s\.-]{4,30})', row_text)
+                names = re.findall(r'([A-Za-z\s\.\'-]{5,35})', row_text)
                 if len(names) >= 2:
-                    fighter1, fighter2 = names[0].strip(), names[1].strip()
+                    fighter1 = names[0].strip()
+                    fighter2 = names[1].strip()
                     fight_key = f"{fighter1} vs {fighter2}"
                     fights.append({
                         "fight": fight_key,
@@ -77,12 +83,14 @@ def scrape_ufc_moneyline():
             continue
 
     print(f"✅ Scraped {len(fights)} potential UFC fights")
-    if len(fights) == 0:
-        print("🔍 DEBUG: No fights found - page may be JS-heavy or structure changed")
+    if len(fights) > 0:
+        print("First fight found:", fights[0]["fight"])
+    else:
+        print("🔍 DEBUG: No fights detected - page is likely JavaScript heavy")
 
     return fights
 
-# ====================== Rest of the code (same as before) ======================
+# ====================== Rest of code (unchanged) ======================
 def load_history():
     try:
         with open(DATA_FILE, "r") as f:
@@ -93,6 +101,14 @@ def load_history():
 def save_history(current_fights):
     with open(DATA_FILE, "w") as f:
         json.dump({f["fight"]: f for f in current_fights}, f, indent=2)
+
+def parse_american_odds(odds_str):
+    if not odds_str:
+        return None
+    cleaned = str(odds_str).strip()
+    if cleaned.startswith(('+', '-')) and cleaned[1:].isdigit():
+        return int(cleaned)
+    return None
 
 def detect_movements(old_data, new_fights):
     messages = []
@@ -113,14 +129,6 @@ def detect_movements(old_data, new_fights):
                             msg = f"🔄 **{key}**\n{fight[fk]} odds moved: {old_odds} → **{new_odds}** ({direction}{diff} pts)"
                             messages.append(msg)
     return messages
-
-def parse_american_odds(odds_str):
-    if not odds_str:
-        return None
-    cleaned = str(odds_str).strip()
-    if cleaned.startswith(('+', '-')) and cleaned[1:].isdigit():
-        return int(cleaned)
-    return None
 
 def send_telegram(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
