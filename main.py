@@ -2,11 +2,11 @@ import os
 import time
 import json
 import datetime
+from playwright.sync_api import sync_playwright
 import requests
 from bs4 import BeautifulSoup
-import re
 
-print("🚀 UFC BetOnline Monitor started (LIGHT version - DEBUG MODE)")
+print("🚀 UFC BetOnline Monitor started (Playwright version)")
 
 # ========================= CONFIG =========================
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -17,80 +17,51 @@ POLL_INTERVAL_SECONDS = 600
 MIN_MOVEMENT_POINTS = 10
 # ========================================================
 
-if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-    print("❌ Missing Telegram credentials!")
-    raise ValueError("Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID")
-
-headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
-}
+headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
 def scrape_ufc_moneyline():
     print(f"🌐 Scraping at {datetime.datetime.now().strftime('%H:%M:%S')}")
-    try:
-        r = requests.get(URL, headers=headers, timeout=20)
-        r.raise_for_status()
-        print(f"✅ Page loaded ({len(r.text):,} characters)")
-    except Exception as e:
-        print(f"❌ Request failed: {e}")
-        return []
-
-    soup = BeautifulSoup(r.text, "html.parser")
-    
-    # === DEBUG INFO ===
-    page_text = r.text.lower()
-    has_ufc = "ufc" in page_text
-    print(f"📊 Does the page contain 'UFC'? → {has_ufc}")
-
-    ufc_blocks = soup.find_all(string=lambda text: text and "UFC" in text.upper())
-    print(f"📊 Found {len(ufc_blocks)} text blocks containing 'UFC'")
-
-    odds_pattern = re.compile(r'([+-]\d{2,4})')
-    all_odds = odds_pattern.findall(r.text)
-    print(f"📊 Found {len(all_odds)} potential American odds on the entire page")
-
-    # Sample of page content near UFC
-    if ufc_blocks:
-        print("🔍 Sample UFC content found:")
-        for block in ufc_blocks[:3]:  # first 3 only
-            print("   →", block.strip()[:150])
-
-    # Try to scrape fights
     fights = []
-    rows = soup.select("div, section, tr, li, span")
-    for row in rows:
-        try:
-            row_text = row.get_text(strip=True)
-            if "UFC" not in row_text.upper():
-                continue
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_extra_http_headers(headers)
+        page.goto(URL, wait_until="networkidle", timeout=60000)
+        time.sleep(8)  # let JS load fights
 
-            odds_in_row = odds_pattern.findall(row_text)
-            if len(odds_in_row) >= 2:
-                names = re.findall(r'([A-Za-z\s\.\'-]{5,35})', row_text)
-                if len(names) >= 2:
-                    fighter1 = names[0].strip()
-                    fighter2 = names[1].strip()
+        html = page.content()
+        soup = BeautifulSoup(html, "html.parser")
+        browser.close()
+
+        rows = soup.select("div, section, tr, li")
+        for row in rows:
+            try:
+                row_text = row.get_text(strip=True)
+                if "UFC" not in row_text.upper():
+                    continue
+
+                # Extract fighter names and odds
+                names = [t.strip() for t in row_text.split() if len(t) > 4 and t[0].isalpha()]
+                odds = [o for o in row_text.split() if o.startswith(('+', '-')) and o[1:].isdigit()]
+
+                if len(names) >= 2 and len(odds) >= 2:
+                    fighter1, fighter2 = names[0], names[1]
                     fight_key = f"{fighter1} vs {fighter2}"
                     fights.append({
                         "fight": fight_key,
                         "fighter1": fighter1,
-                        "fighter1_odds": odds_in_row[0],
+                        "fighter1_odds": odds[0],
                         "fighter2": fighter2,
-                        "fighter2_odds": odds_in_row[1],
+                        "fighter2_odds": odds[1],
                         "timestamp": datetime.datetime.now().isoformat()
                     })
-        except:
-            continue
+            except:
+                continue
 
     print(f"✅ Scraped {len(fights)} potential UFC fights")
-    if len(fights) > 0:
-        print("First fight found:", fights[0]["fight"])
-    else:
-        print("🔍 DEBUG: No fights detected - page is likely JavaScript heavy")
-
     return fights
 
-# ====================== Rest of code (unchanged) ======================
+# ====================== Rest of code ======================
 def load_history():
     try:
         with open(DATA_FILE, "r") as f:
