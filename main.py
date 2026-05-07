@@ -6,7 +6,7 @@ import requests
 from bs4 import BeautifulSoup
 import re
 
-print("🚀 UFC BetOnline Monitor started (LIGHT version - IMPROVED PARSER)")
+print("🚀 UFC BetOnline Monitor started (LIGHT version - STRONG PARSER)")
 
 # ========================= CONFIG =========================
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -38,19 +38,16 @@ def scrape_ufc_moneyline():
     soup = BeautifulSoup(r.text, "html.parser")
     fights = []
 
-    # Stronger regex to find American odds
     odds_pattern = re.compile(r'([+-]\d{2,4})')
-    all_odds = odds_pattern.findall(r.text)
-    print(f"📊 Found {len(all_odds)} potential odds on page")
 
-    # Look for blocks containing UFC + at least 2 odds
+    # Look for any text block containing "UFC" and at least 2 odds
     for block in soup.find_all(string=lambda text: text and "UFC" in text.upper()):
         try:
-            block_text = block.strip()
+            block_text = str(block).strip()
             odds_in_block = odds_pattern.findall(block_text)
             if len(odds_in_block) >= 2:
-                # Extract fighter names (long words with letters)
-                names = re.findall(r'([A-Za-z][A-Za-z\s\.\'-]{4,35})', block_text)
+                # Extract fighter names (long sequences of letters, spaces, apostrophes)
+                names = re.findall(r'([A-Za-z][A-Za-z\s\.\'-]{5,40})', block_text)
                 if len(names) >= 2:
                     fighter1 = names[0].strip()
                     fighter2 = names[1].strip()
@@ -68,11 +65,13 @@ def scrape_ufc_moneyline():
 
     print(f"✅ Scraped {len(fights)} potential UFC fights")
     if fights:
-        print("First fight:", fights[0]["fight"], fights[0]["fighter1_odds"], fights[0]["fighter2_odds"])
+        print("✅ First fight detected:", fights[0]["fight"], fights[0]["fighter1_odds"], fights[0]["fighter2_odds"])
+    else:
+        print("🔍 Still no fights - page structure may have changed")
 
     return fights
 
-# ====================== Rest of code (unchanged) ======================
+# ====================== Rest of code ======================
 def load_history():
     try:
         with open(DATA_FILE, "r") as f:
@@ -130,6 +129,12 @@ if __name__ == "__main__":
             for msg in movements:
                 print(msg)
                 send_telegram(msg)
+            save_history(current_fights)
+        else:
+            print("⚠️ No fights found this cycle")
+
+        print(f"⏳ Sleeping {POLL_INTERVAL_SECONDS//60} minutes...")
+        time.sleep(POLL_INTERVAL_SECONDS)                send_telegram(msg)
             save_history(current_fights)
         else:
             print("⚠️ No fights found this cycle")
