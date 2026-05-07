@@ -11,7 +11,7 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
 DATA_FILE = "/tmp/ufc_odds_history.json"
-POLL_INTERVAL_SECONDS = 600   # Increased to 10 minutes (safer)
+POLL_INTERVAL_SECONDS = 600   # 10 minutes
 MIN_MOVEMENT_POINTS = 10
 # ========================================================
 
@@ -19,21 +19,17 @@ if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
     raise ValueError("❌ Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID environment variables!")
 
 def parse_american_odds(odds_str):
-    if not odds_str:
-        return None
+    if not odds_str: return None
     cleaned = odds_str.strip()
     if cleaned.startswith(('+', '-')) and cleaned[1:].isdigit():
         return int(cleaned)
     return None
 
-def is_ufc_fight(row_text):
-    text_upper = row_text.upper()
-    if "UFC" not in text_upper:
-        return False
-    for promo in ["PFL", "BELLATOR", "ONE", "RIZIN", "INVICTA", "LFA", "CAGE WARRIORS", "KSW", "BKFC", "BJJ", "ACA", "TITAN"]:
-        if promo in text_upper:
-            return False
-    return True
+def is_ufc_fight(text):
+    upper = text.upper()
+    if "UFC" not in upper: return False
+    bad = ["PFL","BELLATOR","ONE","RIZIN","INVICTA","LFA","CAGE WARRIORS","KSW","BKFC","BJJ","ACA","TITAN"]
+    return not any(x in upper for x in bad)
 
 def get_playwright_page():
     playwright = sync_playwright().start()
@@ -43,53 +39,49 @@ def get_playwright_page():
     return playwright, browser, context, page
 
 def scrape_ufc_moneyline(page):
-    print(f"🌐 Navigating at {datetime.datetime.now().strftime('%H:%M:%S')}")
-    page.goto(URL, wait_until="networkidle", timeout=30000)
-    
-    # Longer wait + multiple attempts
-    time.sleep(8)
-    
+    print(f"🌐 Scraping at {datetime.datetime.now().strftime('%H:%M:%S')}")
+    page.goto(URL, wait_until="networkidle", timeout=60000)
+    time.sleep(12)   # give it time to fully load
+
     soup = BeautifulSoup(page.content(), "html.parser")
     fights = []
-    
-    # More flexible selectors
-    fight_rows = soup.select("div[class*='market'], div[class*='event'], tr, div[role='row'], .odds-row, .fight-row, .market-row")
 
-    for row in fight_rows:
+    # Very broad search for any row that might contain fights
+    rows = soup.select("div, tr, li, section")
+
+    for row in rows:
         try:
-            row_text = row.get_text()
-            if not is_ufc_fight(row_text):
-                continue
+            text = row.get_text()
+            if not is_ufc_fight(text): continue
 
-            names = row.select("span, div, a")
-            fighter_names = [n.get_text(strip=True) for n in names if len(n.get_text(strip=True)) > 3 and not n.get_text(strip=True).isdigit()][:2]
-            if len(fighter_names) < 2:
-                continue
+            # Try to extract fighter names
+            candidates = row.select("span, div, a")
+            names = [n.get_text(strip=True) for n in candidates if len(n.get_text(strip=True)) > 5][:2]
+            if len(names) < 2: continue
 
-            fighter1, fighter2 = fighter_names[0], fighter_names[1]
+            fighter1, fighter2 = names[0], names[1]
 
-            odds = row.select("span, button, div")
-            odds_texts = [o.get_text(strip=True) for o in odds if o.get_text(strip=True).startswith(('+', '-'))]
+            # Extract odds
+            odds = [o.get_text(strip=True) for o in row.select("span, button, div") 
+                    if o.get_text(strip=True).startswith(('+', '-'))]
 
-            if len(odds_texts) >= 2:
+            if len(odds) >= 2:
                 fight_key = f"{fighter1} vs {fighter2}"
                 fights.append({
                     "fight": fight_key,
                     "fighter1": fighter1,
-                    "fighter1_odds": odds_texts[0],
+                    "fighter1_odds": odds[0],
                     "fighter2": fighter2,
-                    "fighter2_odds": odds_texts[1],
+                    "fighter2_odds": odds[1],
                     "timestamp": datetime.datetime.now().isoformat()
                 })
         except:
             continue
 
-    print(f"✅ Scraped {len(fights)} UFC fights")
+    print(f"✅ Found {len(fights)} potential UFC fights")
     return fights
 
-# (The rest of the functions remain the same - load_history, detect_movements, send_telegram, main loop)
-# ... paste the rest of your previous main.py here (from load_history down to the end)
-
+# ==================== Rest of the code ====================
 def load_history():
     try:
         with open(DATA_FILE, "r") as f:
@@ -107,18 +99,15 @@ def detect_movements(old_data, new_fights):
         key = fight["fight"]
         if key in old_data:
             old = old_data[key]
-            for fighter_key in ["fighter1", "fighter2"]:
-                old_odds_str = old.get(f"{fighter_key}_odds")
-                new_odds_str = fight.get(f"{fighter_key}_odds")
-                if old_odds_str != new_odds_str:
-                    old_odds = parse_american_odds(old_odds_str)
-                    new_odds = parse_american_odds(new_odds_str)
-                    if old_odds is not None and new_odds is not None:
-                        diff = abs(new_odds - old_odds)
-                        if diff >= MIN_MOVEMENT_POINTS:
-                            direction = '↑' if new_odds > old_odds else '↓'
-                            msg = f"🔄 **{key}**\n{fight[fighter_key]} odds moved: {old_odds_str} → **{new_odds_str}** ({direction}{diff} pts)"
-                            messages.append(msg)
+            for fk in ["fighter1", "fighter2"]:
+                old_odds = old.get(f"{fk}_odds")
+                new_odds = fight.get(f"{fk}_odds")
+                if old_odds != new_odds:
+                    diff = abs(parse_american_odds(new_odds or 0) - parse_american_odds(old_odds or 0))
+                    if diff >= MIN_MOVEMENT_POINTS and diff < 500:   # prevent crazy numbers
+                        direction = '↑' if parse_american_odds(new_odds) > parse_american_odds(old_odds) else '↓'
+                        msg = f"🔄 **{key}**\n{fight[fk]} odds moved: {old_odds} → **{new_odds}** ({direction}{diff} pts)"
+                        messages.append(msg)
     return messages
 
 def send_telegram(message):
@@ -127,8 +116,8 @@ def send_telegram(message):
     try:
         requests.post(url, json=payload, timeout=10)
         print("📨 Telegram sent")
-    except Exception as e:
-        print("Telegram error:", e)
+    except:
+        print("Telegram failed")
 
 if __name__ == "__main__":
     print("🚀 UFC BetOnline Monitor started!")
@@ -145,12 +134,12 @@ if __name__ == "__main__":
                     send_telegram(msg)
                 save_history(current_fights)
             else:
-                print("⚠️ No fights found - page structure may have changed")
+                print("⚠️ No fights found this cycle - page may still be loading or changed")
 
             print(f"⏳ Sleeping {POLL_INTERVAL_SECONDS//60} minutes...")
             time.sleep(POLL_INTERVAL_SECONDS)
     except KeyboardInterrupt:
-        print("🛑 Shutting down...")
+        print("🛑 Stopped")
     finally:
         page.close()
         context.close()
