@@ -3,14 +3,15 @@ import time
 import json
 import datetime
 import requests
+import re
 from playwright.sync_api import sync_playwright
 
-print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v1 - FULL PAGE RENDER)")
+print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v2 - FIXED TIMEOUT)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
 DATA_FILE = "/tmp/ufc_odds_history.json"
-POLL_INTERVAL_SECONDS = 60
+POLL_INTERVAL_SECONDS = 90
 MIN_MOVEMENT_POINTS = 10
 
 if not DISCORD_WEBHOOK_URL:
@@ -20,49 +21,58 @@ if not DISCORD_WEBHOOK_URL:
 def scrape_ufc_moneyline():
     print(f"🌐 Scraping at {datetime.datetime.now().strftime('%H:%M:%S')}")
     fights = []
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
-        page.goto(URL, wait_until="networkidle", timeout=30000)
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-setuid-sandbox"]
+            )
+            page = browser.new_page()
+            
+            print("🌍 Navigating to BetOnline...")
+            page.goto(URL, wait_until="load", timeout=60000)   # changed + longer timeout
+            
+            print("⏳ Waiting for dynamic content to load...")
+            page.wait_for_timeout(12000)   # 12 seconds extra for JS to render fights
+            
+            content = page.content()
+            browser.close()
+
+        # Parse the fully rendered page
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(content, "html.parser")
         
-        # Wait for the dynamic content to load
-        page.wait_for_timeout(8000)  # 8 seconds for JS to render fights
-        
-        content = page.content()
-        browser.close()
+        odds_pattern = re.compile(r'([+-]\d{2,4})')
+        name_pattern = re.compile(r'([A-Z][A-Za-z\']{4,30}\s[A-Z][A-Za-z\']{4,30})')
 
-    # Same parsing logic as before but now on fully rendered page
-    from bs4 import BeautifulSoup
-    soup = BeautifulSoup(content, "html.parser")
-    odds_pattern = re.compile(r'([+-]\d{2,4})')
-    name_pattern = re.compile(r'([A-Z][A-Za-z\']{4,30}\s[A-Z][A-Za-z\']{4,30})')
+        for text_block in soup.find_all(text=True):
+            text = text_block.strip()
+            if not text or "UFC" not in text.upper():
+                continue
+            odds = odds_pattern.findall(text)
+            names = name_pattern.findall(text)
+            if len(odds) >= 2 and len(names) >= 2:
+                fighter1 = names[0].strip()
+                fighter2 = names[1].strip()
+                fight_key = f"{fighter1} vs {fighter2}"
+                fights.append({
+                    "fight": fight_key,
+                    "fighter1": fighter1,
+                    "fighter1_odds": odds[0],
+                    "fighter2": fighter2,
+                    "fighter2_odds": odds[1],
+                    "timestamp": datetime.datetime.now().isoformat()
+                })
+                print(f"✅ Found fight: {fight_key} | {odds[0]} vs {odds[1]}")
 
-    for row in soup.find_all('div', class_=lambda x: x and 'fight' in x.lower() or 'row' in x.lower()):
-        text = row.get_text()
-        if "UFC" not in text.upper():
-            continue
-        odds = odds_pattern.findall(text)
-        names = name_pattern.findall(text)
-        if len(odds) >= 2 and len(names) >= 2:
-            fighter1 = names[0].strip()
-            fighter2 = names[1].strip()
-            fight_key = f"{fighter1} vs {fighter2}"
-            fights.append({
-                "fight": fight_key,
-                "fighter1": fighter1,
-                "fighter1_odds": odds[0],
-                "fighter2": fighter2,
-                "fighter2_odds": odds[1],
-                "timestamp": datetime.datetime.now().isoformat()
-            })
-            print(f"✅ Found fight: {fight_key} | {odds[0]} vs {odds[1]}")
+        print(f"✅ Scraped {len(fights)} potential fights")
+        return fights
 
-    print(f"✅ Scraped {len(fights)} potential fights")
-    return fights
+    except Exception as e:
+        print(f"❌ Playwright error: {e}")
+        return []
 
-# ====================== REST OF CODE (same as before) ======================
-import re  # for the patterns above
-
+# ====================== REST OF CODE ======================
 def load_history():
     try:
         with open(DATA_FILE, "r") as f:
