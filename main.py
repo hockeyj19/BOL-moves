@@ -6,7 +6,7 @@ import requests
 from bs4 import BeautifulSoup
 import re
 
-print("🚀 UFC BetOnline Monitor started (STABLE v8 - AGGRESSIVE PARSER)")
+print("🚀 UFC BetOnline Monitor started (STABLE v9 - STRICT FIGHTER NAMES)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
@@ -19,6 +19,8 @@ if not DISCORD_WEBHOOK_URL:
     raise ValueError("Missing DISCORD_WEBHOOK_URL")
 
 headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+
+GARBAGE = {"betonline", "vip", "rewards", "crypto", "tutorial", "privacy", "policy", "wrapper", "jds", "js", "betslip"}
 
 def scrape_ufc_moneyline():
     print(f"🌐 Scraping at {datetime.datetime.now().strftime('%H:%M:%S')}")
@@ -35,10 +37,9 @@ def scrape_ufc_moneyline():
 
     fights = []
     odds_pattern = re.compile(r'([+-]\d{2,4})')
-    # Strong name pattern for real fighters
-    name_pattern = re.compile(r'([A-Z][A-Za-z\']{2,30}\s[A-Z][A-Za-z\']{2,30})')
+    # Very strict: First Last format with reasonable length
+    name_pattern = re.compile(r'([A-Z][A-Za-z\']{3,25}\s[A-Z][A-Za-z\']{3,25})')
 
-    # Search entire page text
     for line in full_text.splitlines():
         if "UFC" not in line.upper():
             continue
@@ -48,9 +49,11 @@ def scrape_ufc_moneyline():
             fighter1 = names[0].strip()
             fighter2 = names[1].strip()
             fight_key = f"{fighter1} vs {fighter2}"
-            # Ignore obvious garbage
-            if any(g in fight_key.lower() for g in ["crypto", "privacy", "tutorial", "policy", "wrapper", "jds", "js"]):
+
+            # Extra strict garbage filter
+            if any(g in fight_key.lower() for g in GARBAGE):
                 continue
+
             fights.append({
                 "fight": fight_key,
                 "fighter1": fighter1,
@@ -116,7 +119,6 @@ def send_discord(message):
     except Exception as e:
         print("Discord error:", e)
 
-# ====================== MAIN LOOP ======================
 if __name__ == "__main__":
     while True:
         current_fights = scrape_ufc_moneyline()
