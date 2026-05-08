@@ -6,7 +6,7 @@ import requests
 from bs4 import BeautifulSoup
 import re
 
-print("🚀 UFC BetOnline Monitor started (STABLE v15 - EVENT WHITELIST)")
+print("🚀 UFC BetOnline Monitor started (STABLE v16 - GLOBAL UFC SEARCH)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
@@ -20,19 +20,7 @@ if not DISCORD_WEBHOOK_URL:
 
 headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
-# ================== NEW EVENT WHITELIST FROM YOUR SCREENSHOTS ==================
-EVENT_WHITELIST = [
-    "UFC 328", "UFC Freedom Fights", "RIZIN", "MVP 1", "UAE Warriors",
-    "Future Events", "UFC", "MMA - UFC"
-]
-
-GARBAGE = {
-    "betonline", "vip", "rewards", "crypto", "tutorial", "privacy", "policy", "wrapper",
-    "jds", "js", "betslip", "feature_", "webappconfig", "chashout", "new_relic",
-    "sas_rollout", "kameleoon", "diffusion", "bff_", "key_cloak", "newrelic",
-    "gtm", "intercom", "xtremepush", "strapi", "cashoutapi", "edgetier",
-    "surveymonkey", "widget"
-}
+GARBAGE = {"betonline", "vip", "rewards", "crypto", "tutorial", "privacy", "policy", "wrapper", "jds", "js", "betslip", "feature_", "webappconfig", "chashout", "new_relic", "sas_rollout", "kameleoon", "diffusion", "bff_", "key_cloak", "newrelic", "gtm", "intercom", "xtremepush", "strapi", "cashoutapi", "edgetier", "surveymonkey", "widget"}
 
 def scrape_ufc_moneyline():
     print(f"🌐 Scraping at {datetime.datetime.now().strftime('%H:%M:%S')}")
@@ -49,49 +37,38 @@ def scrape_ufc_moneyline():
     odds_pattern = re.compile(r'([+-]\d{2,4})')
     name_pattern = re.compile(r'([A-Z][A-Za-z\']{3,30}\s[A-Z][A-Za-z\']{3,30})')
 
-    current_event = None
+    ufclines = 0
     for line in full_text.splitlines():
-        line_upper = line.upper()
+        if "UFC" in line.upper() or "MMA" in line.upper():
+            ufclines += 1
+            odds = odds_pattern.findall(line)
+            names = name_pattern.findall(line)
+            if len(odds) >= 2 and len(names) >= 2:
+                fighter1 = names[0].strip()
+                fighter2 = names[1].strip()
+                fight_key = f"{fighter1} vs {fighter2}"
+                if any(g in fight_key.lower() for g in GARBAGE):
+                    continue
+                fights.append({
+                    "fight": fight_key,
+                    "fighter1": fighter1,
+                    "fighter1_odds": odds[0],
+                    "fighter2": fighter2,
+                    "fighter2_odds": odds[1],
+                    "timestamp": datetime.datetime.now().isoformat()
+                })
+                print(f"✅ Found fight: {fight_key} | {odds[0]} vs {odds[1]}")
 
-        # Detect if we're inside a known event section
-        for event in EVENT_WHITELIST:
-            if event.upper() in line_upper:
-                current_event = event
-                print(f"📍 Detected event section: {current_event}")
-                break
+    print(f"📊 Found {ufclines} lines containing UFC/MMA")
+    print(f"✅ Scraped {len(fights)} potential fights")
 
-        if current_event is None:
-            continue
-
-        odds = odds_pattern.findall(line)
-        names = name_pattern.findall(line)
-
-        if len(odds) >= 2 and len(names) >= 2:
-            fighter1 = names[0].strip()
-            fighter2 = names[1].strip()
-            fight_key = f"{fighter1} vs {fighter2}"
-
-            if any(g in fight_key.lower() for g in GARBAGE):
-                continue
-
-            fights.append({
-                "fight": fight_key,
-                "fighter1": fighter1,
-                "fighter1_odds": odds[0],
-                "fighter2": fighter2,
-                "fighter2_odds": odds[1],
-                "timestamp": datetime.datetime.now().isoformat()
-            })
-            print(f"✅ Found fight: {fight_key} | {odds[0]} vs {odds[1]}")
-
-    print(f"✅ Scraped {len(fights)} potential UFC fights from whitelisted events")
-    if len(fights) == 0:
-        print("🔍 DEBUG: Still 0 fights - dumping first 15,000 chars:")
-        print(repr(full_text[:15000]))
+    if len(fights) == 0 and ufclines == 0:
+        print("🔍 DEBUG: No UFC lines at all - dumping first 20,000 chars:")
+        print(repr(full_text[:20000]))
 
     return fights
 
-# ====================== REST OF CODE (unchanged) ======================
+# ====================== REST OF CODE (same as v15) ======================
 def load_history():
     try:
         with open(DATA_FILE, "r") as f:
@@ -104,8 +81,7 @@ def save_history(current_fights):
         json.dump({f["fight"]: f for f in current_fights}, f, indent=2)
 
 def parse_american_odds(odds_str):
-    if not odds_str:
-        return None
+    if not odds_str: return None
     cleaned = str(odds_str).strip()
     if cleaned.startswith(('+', '-')) and cleaned[1:].isdigit():
         return int(cleaned)
