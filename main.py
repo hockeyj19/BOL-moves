@@ -5,8 +5,9 @@ import datetime
 import requests
 import re
 from playwright.sync_api import sync_playwright
+from bs4 import BeautifulSoup
 
-print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v2 - FIXED TIMEOUT)")
+print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v3 - STRONGER PARSER)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
@@ -23,34 +24,29 @@ def scrape_ufc_moneyline():
     fights = []
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                args=["--no-sandbox", "--disable-setuid-sandbox"]
-            )
+            browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
             page = browser.new_page()
-            
             print("🌍 Navigating to BetOnline...")
-            page.goto(URL, wait_until="load", timeout=60000)   # changed + longer timeout
-            
-            print("⏳ Waiting for dynamic content to load...")
-            page.wait_for_timeout(12000)   # 12 seconds extra for JS to render fights
+            page.goto(URL, wait_until="load", timeout=60000)
+            print("⏳ Waiting for dynamic content...")
+            page.wait_for_timeout(12000)
             
             content = page.content()
             browser.close()
 
-        # Parse the fully rendered page
-        from bs4 import BeautifulSoup
+        # === STRONGER PARSER ===
         soup = BeautifulSoup(content, "html.parser")
+        full_text = soup.get_text(separator=" ", strip=True)
         
         odds_pattern = re.compile(r'([+-]\d{2,4})')
-        name_pattern = re.compile(r'([A-Z][A-Za-z\']{4,30}\s[A-Z][A-Za-z\']{4,30})')
+        name_pattern = re.compile(r'([A-Z][A-Za-z\']{4,35}\s[A-Z][A-Za-z\']{4,35})')
 
-        for text_block in soup.find_all(text=True):
-            text = text_block.strip()
-            if not text or "UFC" not in text.upper():
+        # Search the entire rendered text in bigger chunks
+        for block in full_text.split("  "):   # split on double spaces to get logical blocks
+            if "UFC" not in block.upper():
                 continue
-            odds = odds_pattern.findall(text)
-            names = name_pattern.findall(text)
+            odds = odds_pattern.findall(block)
+            names = name_pattern.findall(block)
             if len(odds) >= 2 and len(names) >= 2:
                 fighter1 = names[0].strip()
                 fighter2 = names[1].strip()
@@ -66,6 +62,11 @@ def scrape_ufc_moneyline():
                 print(f"✅ Found fight: {fight_key} | {odds[0]} vs {odds[1]}")
 
         print(f"✅ Scraped {len(fights)} potential fights")
+
+        if len(fights) == 0:
+            print("🔍 DEBUG: No fights found - dumping first 8000 chars of rendered text:")
+            print(repr(full_text[:8000]))
+
         return fights
 
     except Exception as e:
