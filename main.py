@@ -6,18 +6,17 @@ import requests
 import re
 from playwright.sync_api import sync_playwright
 
-print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v25-Telegram - EXACT WORKING PARSER)")
+print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v24 - FULL GAME STRUCTURE DEBUG)")
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
 DATA_FILE = "/tmp/ufc_odds_history.json"
 POLL_INTERVAL_SECONDS = 90
 MIN_MOVEMENT_POINTS = 10
 
-if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-    print("❌ Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID!")
-    raise ValueError("Missing Telegram credentials")
+if not DISCORD_WEBHOOK_URL:
+    print("❌ Missing DISCORD_WEBHOOK_URL!")
+    raise ValueError("Missing DISCORD_WEBHOOK_URL")
 
 def scrape_ufc_moneyline():
     print(f"🌐 Scraping at {datetime.datetime.now().strftime('%H:%M:%S')}")
@@ -28,7 +27,8 @@ def scrape_ufc_moneyline():
             page = browser.new_page()
 
             def handle_response(response):
-                if "offering-by-league" in response.url.lower():
+                url = response.url.lower()
+                if "offering-by-league" in url:
                     print(f"🔥 FOUND OFFERING-BY-LEAGUE → {response.url}")
                     try:
                         data = response.json()
@@ -37,12 +37,22 @@ def scrape_ufc_moneyline():
 
                         print(f"   📌 Found {len(games)} games in GameOffering")
 
+                        # === DEBUG: Show structure of first 3 games ===
+                        for i, game in enumerate(games[:3]):
+                            print(f"   📋 Game {i} keys: {list(game.keys())}")
+                            print(f"   📋 Sample game {i}: {repr(game)[:800]}...")  # first 800 chars
+
+                        # === Try multiple possible key paths ===
                         for game in games:
-                            f1 = (game.get("AwayTeam") or game.get("Participant1") or game.get("Team1") or game.get("Away") or "Unknown")
-                            f2 = (game.get("HomeTeam") or game.get("Participant2") or game.get("Team2") or game.get("Home") or "Unknown")
+                            # Fighter names - try several possible keys
+                            f1 = (game.get("AwayTeam") or game.get("Participant1") or 
+                                  game.get("Team1") or game.get("Away") or "Unknown")
+                            f2 = (game.get("HomeTeam") or game.get("Participant2") or 
+                                  game.get("Team2") or game.get("Home") or "Unknown")
 
                             fight_key = f"{f1} vs {f2}"
 
+                            # Odds - try several nesting levels
                             away_line = game.get("AwayLine") or game.get("AwayTeamLine") or {}
                             home_line = game.get("HomeLine") or game.get("HomeTeamLine") or {}
                             odds1 = (away_line.get("MoneyLine", {}).get("Line") or 
@@ -76,23 +86,17 @@ def scrape_ufc_moneyline():
             browser.close()
 
         print(f"✅ Scraped {len(fights)} potential fights")
+
+        if len(fights) == 0:
+            print("🔍 Check the 📋 Game keys and sample above — we'll fix the keys in the next version.")
+
         return fights
 
     except Exception as e:
         print(f"❌ Playwright error: {e}")
         return []
 
-# ====================== TELEGRAM ======================
-def send_telegram(message):
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
-    try:
-        requests.post(url, json=payload, timeout=10)
-        print("📨 Telegram sent")
-    except Exception as e:
-        print("Telegram error:", e)
-
-# ====================== REST OF CODE ======================
+# ====================== REST OF CODE (unchanged) ======================
 def load_history():
     try:
         with open(DATA_FILE, "r") as f:
@@ -131,6 +135,14 @@ def detect_movements(old_data, new_fights):
                             messages.append(msg)
     return messages
 
+def send_discord(message):
+    payload = {"content": message}
+    try:
+        requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10)
+        print("📨 Discord message sent")
+    except Exception as e:
+        print("Discord error:", e)
+
 if __name__ == "__main__":
     while True:
         current_fights = scrape_ufc_moneyline()
@@ -139,7 +151,7 @@ if __name__ == "__main__":
             movements = detect_movements(old_data, current_fights)
             for msg in movements:
                 print(msg)
-                send_telegram(msg)
+                send_discord(msg)
             save_history(current_fights)
         else:
             print("⚠️ No fights found this cycle")
