@@ -1,178 +1,149 @@
+import os
+import time
+import json
+import datetime
+import requests
+import re
+from playwright.sync_api import sync_playwright
+
+print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v22 - BUDDY'S GameOffering JSON)")
+
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
+URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
+DATA_FILE = "/tmp/ufc_odds_history.json"
+POLL_INTERVAL_SECONDS = 90
+MIN_MOVEMENT_POINTS = 10
+
+if not DISCORD_WEBHOOK_URL:
+    print("❌ Missing DISCORD_WEBHOOK_URL!")
+    raise ValueError("Missing DISCORD_WEBHOOK_URL")
+
 def scrape_ufc_moneyline():
-
-    print(f"\n🌐 Scraping at {datetime.datetime.now().strftime('%H:%M:%S')}")
-
+    print(f"🌐 Scraping at {datetime.datetime.now().strftime('%H:%M:%S')}")
     fights = []
-
-    captured_json = []
-
     try:
-
         with sync_playwright() as p:
-
-            browser = p.chromium.launch(
-                headless=True,
-                args=["--no-sandbox"]
-            )
-
+            browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
             page = browser.new_page()
 
-            # ================================= RESPONSE INTERCEPT =================================
-
             def handle_response(response):
-
                 url = response.url.lower()
-
-                if "offer-by-league" in url:
-
-                    print(f"🎯 Captured endpoint: {response.url}")
-
+                if any(x in url for x in ["offer", "gameoffering", "league", "mma", "ufc", "api", ".json"]):
+                    print(f"🔥 API RESPONSE → {response.url}")
                     try:
+                        if "application/json" in response.headers.get("content-type", "") or response.url.endswith(".json"):
+                            data = response.json()
 
-                        data = response.json()
+                            # === BUDDY'S EXACT STRUCTURE ===
+                            games = data.get("GameOffering", {}).get("GamesDescription", [])
+                            if games:
+                                print(f"✅ Found GameOffering with {len(games)} games!")
 
-                        captured_json.append(data)
+                            for game in games:
+                                fighter1 = game.get("AwayTeam", "Unknown")
+                                fighter2 = game.get("HomeTeam", "Unknown")
+                                fight_key = f"{fighter1} vs {fighter2}"
+
+                                # Odds from AwayLine / HomeLine
+                                away_line = game.get("AwayLine", {}) or game.get("AwayTeamLine", {})
+                                home_line = game.get("HomeLine", {}) or game.get("HomeTeamLine", {})
+
+                                odds1 = away_line.get("MoneyLine", {}).get("Line") or away_line.get("MoneyLine", "N/A")
+                                odds2 = home_line.get("MoneyLine", {}).get("Line") or home_line.get("MoneyLine", "N/A")
+
+                                if fighter1 != "Unknown" and fighter2 != "Unknown":
+                                    fights.append({
+                                        "fight": fight_key,
+                                        "fighter1": fighter1,
+                                        "fighter1_odds": str(odds1),
+                                        "fighter2": fighter2,
+                                        "fighter2_odds": str(odds2),
+                                        "timestamp": datetime.datetime.now().isoformat()
+                                    })
+                                    print(f"✅ Found fight: {fight_key} | {odds1} vs {odds2}")
 
                     except Exception as e:
-
-                        print("❌ JSON parse failed:", e)
+                        pass  # not JSON or parse failed
 
             page.on("response", handle_response)
 
             print("🌍 Navigating to BetOnline...")
-
-            page.goto(
-                URL,
-                wait_until="networkidle",
-                timeout=60000
-            )
-
-            page.wait_for_timeout(8000)
+            page.goto(URL, wait_until="load", timeout=60000)
+            print("⏳ Waiting for API calls...")
+            page.wait_for_timeout(20000)
 
             browser.close()
 
-        print(f"📦 Captured JSON payloads: {len(captured_json)}")
-
-        seen = set()
-
-        # ================================= MMA FILTER =================================
-
-        MMA_KEYWORDS = [
-            "ufc",
-            "mma",
-            "martial arts",
-            "rizin",
-            "bellator",
-            "pfl",
-            "one championship",
-            "cage warriors",
-            "dwcs"
-        ]
-
-        for payload in captured_json:
-
-            payload_text = json.dumps(payload).lower()
-
-            # SKIP non-MMA payloads entirely
-            if not any(k in payload_text for k in MMA_KEYWORDS):
-                continue
-
-            print("🥋 MMA payload detected")
-
-            # ================================= REGEX EXTRACTION =================================
-
-            #
-            # Matches:
-            #
-            # Marco Tulio -183 Roman Kopylov +158
-            #
-            # Sean Strickland +420 Khamzat Chimaev -550
-            #
-
-            matches = re.findall(
-                r'([A-Z][A-Za-zÀ-ÿ\-\'. ]{2,40})\s+([+-]\d+)\s+'
-                r'([A-Z][A-Za-zÀ-ÿ\-\'. ]{2,40})\s+([+-]\d+)',
-                payload_text,
-                re.IGNORECASE
-            )
-
-            print(f"📊 Regex matches: {len(matches)}")
-
-            for match in matches:
-
-                fighter1 = " ".join(match[0].split()).title().strip()
-                odds1 = match[1].strip()
-
-                fighter2 = " ".join(match[2].split()).title().strip()
-                odds2 = match[3].strip()
-
-                # reject obvious non-fights
-                banned = [
-                    "moneyline",
-                    "spread",
-                    "total",
-                    "over",
-                    "under",
-                    "tie"
-                ]
-
-                if any(b in fighter1.lower() for b in banned):
-                    continue
-
-                if any(b in fighter2.lower() for b in banned):
-                    continue
-
-                # sanity
-                if len(fighter1.split()) < 2:
-                    continue
-
-                if len(fighter2.split()) < 2:
-                    continue
-
-                fight_key = f"{fighter1} vs {fighter2}"
-
-                if fight_key in seen:
-                    continue
-
-                seen.add(fight_key)
-
-                fights.append({
-                    "fight": fight_key,
-                    "fighter1": fighter1,
-                    "fighter1_odds": odds1,
-                    "fighter2": fighter2,
-                    "fighter2_odds": odds2,
-                    "timestamp": datetime.datetime.now().isoformat()
-                })
-
-                print(
-                    f"✅ Found fight: "
-                    f"{fight_key} | {odds1} vs {odds2}"
-                )
-
-        print(f"\n✅ FINAL UFC FIGHTS SCRAPED: {len(fights)}")
-
-        # ================================= DEBUG =================================
+        print(f"✅ Scraped {len(fights)} UFC fights from GameOffering JSON")
 
         if len(fights) == 0:
-
-            print("\n⚠️ NO UFC FIGHTS FOUND")
-
-            if captured_json:
-
-                try:
-
-                    sample = json.dumps(captured_json[0], indent=2)
-
-                    print(sample[:5000])
-
-                except:
-                    pass
+            print("🔍 No fights found — check the 🔥 API RESPONSE lines above")
 
         return fights
 
     except Exception as e:
-
         print(f"❌ Playwright error: {e}")
-
         return []
+
+# ====================== REST OF CODE (unchanged) ======================
+def load_history():
+    try:
+        with open(DATA_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return {}
+
+def save_history(current_fights):
+    with open(DATA_FILE, "w") as f:
+        json.dump({f["fight"]: f for f in current_fights}, f, indent=2)
+
+def parse_american_odds(odds_str):
+    if not odds_str: return None
+    cleaned = str(odds_str).strip()
+    if cleaned.startswith(('+', '-')) and cleaned[1:].isdigit():
+        return int(cleaned)
+    return None
+
+def detect_movements(old_data, new_fights):
+    messages = []
+    for fight in new_fights:
+        key = fight["fight"]
+        if key in old_data:
+            old = old_data[key]
+            for fk in ["fighter1", "fighter2"]:
+                old_odds = old.get(f"{fk}_odds")
+                new_odds = fight.get(f"{fk}_odds")
+                if old_odds != new_odds:
+                    old_val = parse_american_odds(old_odds)
+                    new_val = parse_american_odds(new_odds)
+                    if old_val is not None and new_val is not None:
+                        diff = abs(new_val - old_val)
+                        if diff >= MIN_MOVEMENT_POINTS:
+                            direction = '↑' if new_val > old_val else '↓'
+                            msg = f"🔄 **{key}**\n{fight[fk]} odds moved: {old_odds} → **{new_odds}** ({direction}{diff} pts)"
+                            messages.append(msg)
+    return messages
+
+def send_discord(message):
+    payload = {"content": message}
+    try:
+        requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10)
+        print("📨 Discord message sent")
+    except Exception as e:
+        print("Discord error:", e)
+
+if __name__ == "__main__":
+    while True:
+        current_fights = scrape_ufc_moneyline()
+        if current_fights:
+            old_data = load_history()
+            movements = detect_movements(old_data, current_fights)
+            for msg in movements:
+                print(msg)
+                send_discord(msg)
+            save_history(current_fights)
+        else:
+            print("⚠️ No fights found this cycle")
+
+        print(f"⏳ Sleeping {POLL_INTERVAL_SECONDS} seconds...")
+        time.sleep(POLL_INTERVAL_SECONDS)
