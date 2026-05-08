@@ -6,7 +6,7 @@ import requests
 import re
 from playwright.sync_api import sync_playwright
 
-print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v25-Telegram - FULL WORKING PARSER)")
+print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v25-Telegram - EXACT WORKING PARSER)")
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -28,8 +28,7 @@ def scrape_ufc_moneyline():
             page = browser.new_page()
 
             def handle_response(response):
-                url = response.url.lower()
-                if "offering-by-league" in url:
+                if "offering-by-league" in response.url.lower():
                     print(f"🔥 FOUND OFFERING-BY-LEAGUE → {response.url}")
                     try:
                         data = response.json()
@@ -38,17 +37,9 @@ def scrape_ufc_moneyline():
 
                         print(f"   📌 Found {len(games)} games in GameOffering")
 
-                        # === DEBUG: Show structure of first 3 games ===
-                        for i, game in enumerate(games[:3]):
-                            print(f"   📋 Game {i} keys: {list(game.keys())}")
-                            print(f"   📋 Sample game {i}: {repr(game)[:800]}...")
-
-                        # === Try multiple possible key paths ===
                         for game in games:
-                            f1 = (game.get("AwayTeam") or game.get("Participant1") or 
-                                  game.get("Team1") or game.get("Away") or "Unknown")
-                            f2 = (game.get("HomeTeam") or game.get("Participant2") or 
-                                  game.get("Team2") or game.get("Home") or "Unknown")
+                            f1 = (game.get("AwayTeam") or game.get("Participant1") or game.get("Team1") or game.get("Away") or "Unknown")
+                            f2 = (game.get("HomeTeam") or game.get("Participant2") or game.get("Team2") or game.get("Home") or "Unknown")
 
                             fight_key = f"{f1} vs {f2}"
 
@@ -101,7 +92,7 @@ def send_telegram(message):
     except Exception as e:
         print("Telegram error:", e)
 
-# ====================== REST OF CODE (unchanged) ======================
+# ====================== REST OF CODE ======================
 def load_history():
     try:
         with open(DATA_FILE, "r") as f:
