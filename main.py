@@ -5,7 +5,7 @@ import datetime
 import requests
 import re
 
-print("🚀 UFC BetOnline Monitor started (DISCORD - FINAL v5 - STRICT NAMES)")
+print("🚀 UFC BetOnline Monitor started (DISCORD - FINAL v6 - STRICT)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
@@ -19,6 +19,9 @@ if not DISCORD_WEBHOOK_URL:
 
 headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
+# Garbage words to ignore
+GARBAGE = {"crypto", "tutorial", "privacy", "policy", "wrapper", "jds", "js", "betslip", "slip", "footer"}
+
 def scrape_ufc_moneyline():
     print(f"🌐 Scraping at {datetime.datetime.now().strftime('%H:%M:%S')}")
     try:
@@ -31,22 +34,29 @@ def scrape_ufc_moneyline():
 
     full_text = r.text
     print(f"📊 'UFC' in page? → {'UFC' in full_text.upper()}")
-    print(f"📊 Found {len(re.findall(r'([+-]\\d{2,4})', full_text))} potential odds")
+    print(f"📊 Found {len(re.findall(r'([+-]\d{2,4})', full_text))} potential odds")
 
     fights = []
     odds_pattern = re.compile(r'([+-]\d{2,4})')
-    # STRICT name pattern: two capitalized words with a space, no dots, no JS garbage
+    # Very strict name pattern: Two proper names (First Last)
     name_pattern = re.compile(r'([A-Z][A-Za-z\']{3,25}\s[A-Z][A-Za-z\']{3,25})')
 
     for line in full_text.splitlines():
         if "UFC" not in line.upper():
             continue
+
         odds = odds_pattern.findall(line)
         names = name_pattern.findall(line)
+
         if len(odds) >= 2 and len(names) >= 2:
             fighter1 = names[0].strip()
             fighter2 = names[1].strip()
             fight_key = f"{fighter1} vs {fighter2}"
+
+            # Extra safety - ignore obvious garbage
+            if any(g in fight_key.lower() for g in GARBAGE):
+                continue
+
             fights.append({
                 "fight": fight_key,
                 "fighter1": fighter1,
@@ -60,7 +70,7 @@ def scrape_ufc_moneyline():
     print(f"✅ Scraped {len(fights)} potential UFC fights")
 
     if len(fights) == 0:
-        print("🔍 DEBUG: Still 0 fights - dumping first 600 chars of page:")
+        print("🔍 DEBUG: Still 0 fights - dumping first 600 chars:")
         print(repr(full_text[:600]))
 
     return fights
