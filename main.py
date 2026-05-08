@@ -6,7 +6,7 @@ import requests
 from bs4 import BeautifulSoup
 import re
 
-print("🚀 UFC BetOnline Monitor started (STABLE v10 - LARGE DEBUG)")
+print("🚀 UFC BetOnline Monitor started (STABLE v11 - LARGE DEBUG)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
@@ -33,11 +33,16 @@ def scrape_ufc_moneyline():
         return []
 
     full_text = r.text
-    print(f"📊 'UFC' in page? → {'UFC' in full_text.upper()}")
 
-    # LARGE DEBUG DUMP - first 5000 characters
-    print("🔍 DEBUG: First 5000 characters of page:")
-    print(repr(full_text[:5000]))
+    # LARGE DEBUG - first 15,000 characters
+    print("🔍 DEBUG: First 15,000 characters of page:")
+    print(repr(full_text[:15000]))
+
+    # Also search for known real fighters from your screenshots
+    known_fighters = ["Marco Tulio", "Roman Kopylov", "William Gomis", "Pat Sabatini", "Djorden Santos", "Baisangur Susurkaev", "Jared Gordon", "Jim Miller"]
+    for fighter in known_fighters:
+        if fighter.lower() in full_text.lower():
+            print(f"🔍 Found known fighter in page: {fighter}")
 
     fights = []
     odds_pattern = re.compile(r'([+-]\d{2,4})')
@@ -67,7 +72,7 @@ def scrape_ufc_moneyline():
     print(f"✅ Scraped {len(fights)} potential UFC fights")
     return fights
 
-# (the rest of the code stays exactly the same - history, movement detection, send_discord, main loop)
+# ====================== REST OF CODE (unchanged) ======================
 def load_history():
     try:
         with open(DATA_FILE, "r") as f:
