@@ -6,7 +6,7 @@ import requests
 import re
 from playwright.sync_api import sync_playwright
 
-print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v24 - FULL GAME STRUCTURE DEBUG)")
+print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v26 - FIXED NESTING + BUDDY'S STRUCTURE)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
@@ -27,8 +27,7 @@ def scrape_ufc_moneyline():
             page = browser.new_page()
 
             def handle_response(response):
-                url = response.url.lower()
-                if "offering-by-league" in url:
+                if "offering-by-league" in response.url.lower():
                     print(f"🔥 FOUND OFFERING-BY-LEAGUE → {response.url}")
                     try:
                         data = response.json()
@@ -37,18 +36,16 @@ def scrape_ufc_moneyline():
 
                         print(f"   📌 Found {len(games)} games in GameOffering")
 
-                        for i, game in enumerate(games[:3]):
-                            print(f"   📋 Game {i} keys: {list(game.keys())}")
-                            print(f"   📋 Sample game {i}: {repr(game)[:800]}...")
+                        for game_item in games:
+                            # Buddy's structure: the real game data is inside the "Game" key
+                            game = game_item.get("Game", game_item)   # fallback if flat
 
-                        for game in games:
-                            f1 = (game.get("AwayTeam") or game.get("Participant1") or game.get("Team1") or game.get("Away") or "Unknown")
-                            f2 = (game.get("HomeTeam") or game.get("Participant2") or game.get("Team2") or game.get("Home") or "Unknown")
-
+                            f1 = game.get("AwayTeam", "Unknown")
+                            f2 = game.get("HomeTeam", "Unknown")
                             fight_key = f"{f1} vs {f2}"
 
-                            away_line = game.get("AwayLine") or game.get("AwayTeamLine") or {}
-                            home_line = game.get("HomeLine") or game.get("HomeTeamLine") or {}
+                            away_line = game.get("AwayLine", {}) or {}
+                            home_line = game.get("HomeLine", {}) or {}
 
                             odds1 = (away_line.get("MoneyLine", {}).get("Line") or 
                                      away_line.get("MoneyLine") or 
@@ -87,7 +84,7 @@ def scrape_ufc_moneyline():
         print(f"❌ Playwright error: {e}")
         return []
 
-# ====================== REST OF CODE ======================
+# ====================== REST OF CODE (unchanged) ======================
 def load_history():
     try:
         with open(DATA_FILE, "r") as f:
