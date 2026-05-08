@@ -3,10 +3,9 @@ import time
 import json
 import datetime
 import requests
-from bs4 import BeautifulSoup
 import re
 
-print("🚀 UFC BetOnline Monitor started (DISCORD - FINAL v3)")
+print("🚀 UFC BetOnline Monitor started (DISCORD - FINAL v4 - FULL TEXT PARSER)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
@@ -18,56 +17,54 @@ if not DISCORD_WEBHOOK_URL:
     print("❌ Missing DISCORD_WEBHOOK_URL!")
     raise ValueError("Missing DISCORD_WEBHOOK_URL")
 
-headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
+}
 
 def scrape_ufc_moneyline():
     print(f"🌐 Scraping at {datetime.datetime.now().strftime('%H:%M:%S')}")
     try:
-        r = requests.get(URL, headers=headers, timeout=20)
+        r = requests.get(URL, headers=headers, timeout=25)
         r.raise_for_status()
         print(f"✅ Page loaded ({len(r.text):,} characters)")
     except Exception as e:
         print(f"❌ Request failed: {e}")
         return []
 
-    soup = BeautifulSoup(r.text, "html.parser")
+    full_text = r.text
 
+    print(f"📊 'UFC' in page? → {'UFC' in full_text.upper()}")
+    print(f"📊 Found {len(re.findall(r'([+-]\d{2,4})', full_text))} potential odds in full text")
+
+    # Broad search for fights: look for 2 fighter names near 2 odds
     fights = []
-    # Look for moneyline sections (this matches what we see in your screenshots)
-    for section in soup.find_all(string=lambda text: text and "Moneyline" in text):
-        try:
-            parent = section.parent.parent if section.parent else section
-            text = parent.get_text(strip=True, separator=" ")
-            
-            # Extract odds
-            odds_pattern = re.compile(r'([+-]\d{2,4})')
-            odds = odds_pattern.findall(text)
-            
-            if len(odds) >= 2:
-                # Extract fighter names (capitalized names)
-                names = re.findall(r'([A-Z][A-Za-z\s\.\'-]{4,35})', text)
-                if len(names) >= 2:
-                    fighter1 = names[0].strip()
-                    fighter2 = names[1].strip()
-                    fight_key = f"{fighter1} vs {fighter2}"
-                    
-                    fights.append({
-                        "fight": fight_key,
-                        "fighter1": fighter1,
-                        "fighter1_odds": odds[0],
-                        "fighter2": fighter2,
-                        "fighter2_odds": odds[1],
-                        "timestamp": datetime.datetime.now().isoformat()
-                    })
-                    print(f"✅ Found fight: {fight_key} | {odds[0]} vs {odds[1]}")
-        except:
+    odds_pattern = re.compile(r'([+-]\d{2,4})')
+    name_pattern = re.compile(r'([A-Z][A-Za-z\s\.\'-]{5,40})')
+
+    # Split into lines/blocks and search
+    for line in full_text.splitlines():
+        if "UFC" not in line.upper():
             continue
+        odds = odds_pattern.findall(line)
+        names = name_pattern.findall(line)
+        if len(odds) >= 2 and len(names) >= 2:
+            fighter1 = names[0].strip()
+            fighter2 = names[1].strip()
+            fight_key = f"{fighter1} vs {fighter2}"
+            fights.append({
+                "fight": fight_key,
+                "fighter1": fighter1,
+                "fighter1_odds": odds[0],
+                "fighter2": fighter2,
+                "fighter2_odds": odds[1],
+                "timestamp": datetime.datetime.now().isoformat()
+            })
+            print(f"✅ Found fight: {fight_key} | {odds[0]} vs {odds[1]}")
 
     print(f"✅ Scraped {len(fights)} potential UFC fights")
     if len(fights) == 0:
-        print("🔍 DEBUG: No fights found - dumping sample 'Moneyline' sections:")
-        for section in list(soup.find_all(string=lambda text: text and "Moneyline" in text))[:3]:
-            print("   →", repr(str(section.parent.get_text()[:300] if section.parent else section)[:300]))
+        print("🔍 DEBUG: Still 0 fights - dumping first 800 chars of page for diagnosis:")
+        print(repr(full_text[:800]))
 
     return fights
 
