@@ -7,7 +7,7 @@ import re
 from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
 
-print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v11 - TARGETED MONEYLINE)")
+print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v12 - FIXED PAIRING)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
@@ -42,29 +42,35 @@ def scrape_ufc_moneyline():
         odds_pattern = re.compile(r'([+-]\d{2,4})')
         name_pattern = re.compile(r'([A-Z][A-Za-z\']{4,40}\s[A-Z][A-Za-z\']{4,40})')
 
-        # Split on "Moneyline" and look in the following block
+        # Better pairing: look for blocks with "Moneyline" and take consecutive names + odds
         for block in re.split(r'Moneyline', full_text):
             if "UFC" not in block.upper():
                 continue
-            odds = odds_pattern.findall(block)
+
             names = name_pattern.findall(block)
-            if len(odds) >= 2 and len(names) >= 2:
-                fighter1 = names[0].strip()
-                fighter2 = names[1].strip()
+            odds = odds_pattern.findall(block)
+
+            # Take pairs (name1, name2, odds1, odds2)
+            i = 0
+            while i + 1 < len(names) and i + 1 < len(odds):
+                fighter1 = names[i].strip()
+                fighter2 = names[i+1].strip()
                 fight_key = f"{fighter1} vs {fighter2}"
 
                 if any(g in fight_key.lower() for g in GARBAGE):
+                    i += 1
                     continue
 
                 fights.append({
                     "fight": fight_key,
                     "fighter1": fighter1,
-                    "fighter1_odds": odds[0],
+                    "fighter1_odds": odds[i],
                     "fighter2": fighter2,
-                    "fighter2_odds": odds[1],
+                    "fighter2_odds": odds[i+1],
                     "timestamp": datetime.datetime.now().isoformat()
                 })
-                print(f"✅ Found fight: {fight_key} | {odds[0]} vs {odds[1]}")
+                print(f"✅ Found fight: {fight_key} | {odds[i]} vs {odds[i+1]}")
+                i += 2
 
         print(f"✅ Scraped {len(fights)} potential fights")
 
