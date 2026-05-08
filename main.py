@@ -37,22 +37,19 @@ def scrape_ufc_moneyline():
 
                         print(f"   📌 Found {len(games)} games in GameOffering")
 
-                        # === DEBUG: Show structure of first 3 games ===
                         for i, game in enumerate(games[:3]):
                             print(f"   📋 Game {i} keys: {list(game.keys())}")
-                            print(f"   📋 Sample game {i}: {repr(game)[:800]}...")  
+                            print(f"   📋 Sample game {i}: {repr(game)[:800]}...")
 
-                        # === Try multiple possible key paths ===
                         for game in games:
-                            f1 = (game.get("AwayTeam") or game.get("Participant1") or 
-                                  game.get("Team1") or game.get("Away") or "Unknown")
-                            f2 = (game.get("HomeTeam") or game.get("Participant2") or 
-                                  game.get("Team2") or game.get("Home") or "Unknown")
+                            f1 = (game.get("AwayTeam") or game.get("Participant1") or game.get("Team1") or game.get("Away") or "Unknown")
+                            f2 = (game.get("HomeTeam") or game.get("Participant2") or game.get("Team2") or game.get("Home") or "Unknown")
 
                             fight_key = f"{f1} vs {f2}"
 
                             away_line = game.get("AwayLine") or game.get("AwayTeamLine") or {}
                             home_line = game.get("HomeLine") or game.get("HomeTeamLine") or {}
+
                             odds1 = (away_line.get("MoneyLine", {}).get("Line") or 
                                      away_line.get("MoneyLine") or 
                                      away_line.get("Line") or "N/A")
