@@ -40,11 +40,10 @@ def scrape_ufc_moneyline():
                         # === DEBUG: Show structure of first 3 games ===
                         for i, game in enumerate(games[:3]):
                             print(f"   📋 Game {i} keys: {list(game.keys())}")
-                            print(f"   📋 Sample game {i}: {repr(game)[:800]}...")  # first 800 chars
+                            print(f"   📋 Sample game {i}: {repr(game)[:800]}...")  
 
                         # === Try multiple possible key paths ===
                         for game in games:
-                            # Fighter names - try several possible keys
                             f1 = (game.get("AwayTeam") or game.get("Participant1") or 
                                   game.get("Team1") or game.get("Away") or "Unknown")
                             f2 = (game.get("HomeTeam") or game.get("Participant2") or 
@@ -52,7 +51,6 @@ def scrape_ufc_moneyline():
 
                             fight_key = f"{f1} vs {f2}"
 
-                            # Odds - try several nesting levels
                             away_line = game.get("AwayLine") or game.get("AwayTeamLine") or {}
                             home_line = game.get("HomeLine") or game.get("HomeTeamLine") or {}
                             odds1 = (away_line.get("MoneyLine", {}).get("Line") or 
@@ -86,17 +84,13 @@ def scrape_ufc_moneyline():
             browser.close()
 
         print(f"✅ Scraped {len(fights)} potential fights")
-
-        if len(fights) == 0:
-            print("🔍 Check the 📋 Game keys and sample above — we'll fix the keys in the next version.")
-
         return fights
 
     except Exception as e:
         print(f"❌ Playwright error: {e}")
         return []
 
-# ====================== REST OF CODE (unchanged) ======================
+# ====================== REST OF CODE ======================
 def load_history():
     try:
         with open(DATA_FILE, "r") as f:
