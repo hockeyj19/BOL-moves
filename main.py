@@ -6,7 +6,7 @@ import requests
 import re
 from playwright.sync_api import sync_playwright
 
-print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v24-Telegram)")
+print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v25-Telegram - FULL WORKING PARSER)")
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -28,13 +28,14 @@ def scrape_ufc_moneyline():
             page = browser.new_page()
 
             def handle_response(response):
-                url = response.url.lower()
-                if "offering-by-league" in url:
+                if "offering-by-league" in response.url.lower():
                     print(f"🔥 FOUND OFFERING-BY-LEAGUE → {response.url}")
                     try:
                         data = response.json()
                         game_offering = data.get("GameOffering", {}) or data.get("data", {}).get("GameOffering", {})
                         games = game_offering.get("GamesDescription", [])
+
+                        print(f"   📌 Found {len(games)} games in GameOffering")
 
                         for game in games:
                             f1 = (game.get("AwayTeam") or game.get("Participant1") or game.get("Team1") or game.get("Away") or "Unknown")
@@ -56,10 +57,10 @@ def scrape_ufc_moneyline():
                                     "fighter2_odds": str(odds2),
                                     "timestamp": datetime.datetime.now().isoformat()
                                 })
-                                # print(f"✅ Found fight: {fight_key} | {odds1} vs {odds2}")  # optional
+                                print(f"✅ Found fight: {fight_key} | {odds1} vs {odds2}")
 
                     except Exception as e:
-                        pass
+                        print(f"   JSON parse error: {e}")
 
             page.on("response", handle_response)
 
@@ -77,7 +78,7 @@ def scrape_ufc_moneyline():
         print(f"❌ Playwright error: {e}")
         return []
 
-# ====================== TELEGRAM SENDER ======================
+# ====================== TELEGRAM ======================
 def send_telegram(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
