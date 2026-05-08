@@ -7,7 +7,7 @@ import re
 from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
 
-print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v4 - STRONG FILTER)")
+print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v5 - TUNED FOR REAL FIGHTS)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
@@ -19,13 +19,7 @@ if not DISCORD_WEBHOOK_URL:
     print("❌ Missing DISCORD_WEBHOOK_URL!")
     raise ValueError("Missing DISCORD_WEBHOOK_URL")
 
-GARBAGE = {
-    "betonline", "sportsbook", "betting world", "vip", "rewards", "crypto", "tutorial",
-    "privacy", "policy", "wrapper", "jds", "js", "betslip", "feature_", "webappconfig",
-    "chashout", "new_relic", "sas_rollout", "kameleoon", "diffusion", "bff_", "key_cloak",
-    "newrelic", "gtm", "intercom", "xtremepush", "strapi", "cashoutapi", "edgetier",
-    "surveymonkey", "widget", "cash", "drop", "enter", "code", "promo", "bonus", "reward"
-}
+GARBAGE = {"betonline", "sportsbook", "betting world", "vip", "rewards", "crypto", "tutorial", "privacy", "policy", "wrapper", "jds", "js", "betslip", "feature_", "webappconfig", "chashout", "new_relic", "sas_rollout", "kameleoon", "diffusion", "bff_", "key_cloak", "newrelic", "gtm", "intercom", "xtremepush", "strapi", "cashoutapi", "edgetier", "surveymonkey", "widget", "cash", "drop", "enter", "code", "promo", "bonus", "reward"}
 
 def scrape_ufc_moneyline():
     print(f"🌐 Scraping at {datetime.datetime.now().strftime('%H:%M:%S')}")
@@ -37,8 +31,8 @@ def scrape_ufc_moneyline():
             print("🌍 Navigating to BetOnline...")
             page.goto(URL, wait_until="load", timeout=60000)
             print("⏳ Waiting for dynamic content...")
-            page.wait_for_timeout(12000)
-            
+            page.wait_for_timeout(15000)   # 15 seconds for full load
+
             content = page.content()
             browser.close()
 
@@ -46,22 +40,24 @@ def scrape_ufc_moneyline():
         full_text = soup.get_text(separator=" ", strip=True)
 
         odds_pattern = re.compile(r'([+-]\d{2,4})')
-        name_pattern = re.compile(r'([A-Z][A-Za-z\']{5,35}\s[A-Z][A-Za-z\']{5,35})')
+        name_pattern = re.compile(r'([A-Z][A-Za-z\']{4,35}\s[A-Z][A-Za-z\']{4,35})')
 
+        # Split into logical blocks and search for UFC fights
         for block in full_text.split("  "):
-            block_upper = block.upper()
-            if "UFC" not in block_upper:
+            if "UFC" not in block.upper() and "MMA" not in block.upper():
                 continue
+
             odds = odds_pattern.findall(block)
             names = name_pattern.findall(block)
+
             if len(odds) >= 2 and len(names) >= 2:
                 fighter1 = names[0].strip()
                 fighter2 = names[1].strip()
                 fight_key = f"{fighter1} vs {fighter2}"
-                
+
                 if any(g in fight_key.lower() for g in GARBAGE):
                     continue
-                
+
                 fights.append({
                     "fight": fight_key,
                     "fighter1": fighter1,
@@ -75,8 +71,8 @@ def scrape_ufc_moneyline():
         print(f"✅ Scraped {len(fights)} potential fights")
 
         if len(fights) == 0:
-            print("🔍 DEBUG: Still 0 real fights - dumping first 8000 chars:")
-            print(repr(full_text[:8000]))
+            print("🔍 DEBUG: Still 0 real fights - dumping first 10,000 chars of rendered text:")
+            print(repr(full_text[:10000]))
 
         return fights
 
@@ -84,7 +80,7 @@ def scrape_ufc_moneyline():
         print(f"❌ Playwright error: {e}")
         return []
 
-# ====================== REST OF CODE (unchanged) ======================
+# ====================== REST OF CODE ======================
 def load_history():
     try:
         with open(DATA_FILE, "r") as f:
