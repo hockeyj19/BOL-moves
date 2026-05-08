@@ -6,7 +6,7 @@ import requests
 import re
 from playwright.sync_api import sync_playwright
 
-print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v24 - FULL GAME STRUCTURE DEBUG)")
+print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v25 - NESTED 'Game' STRUCTURE)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
@@ -37,24 +37,21 @@ def scrape_ufc_moneyline():
 
                         print(f"   📌 Found {len(games)} games in GameOffering")
 
-                        # === DEBUG: Show structure of first 3 games ===
-                        for i, game in enumerate(games[:3]):
-                            print(f"   📋 Game {i} keys: {list(game.keys())}")
-                            print(f"   📋 Sample game {i}: {repr(game)[:800]}...")  # first 800 chars
+                        for i, game in enumerate(games[:2]):  # show first 2 for debug
+                            inner = game.get("Game", game)   # nested "Game" key
+                            print(f"   📋 Game {i} inner keys: {list(inner.keys())}")
 
-                        # === Try multiple possible key paths ===
+                        # === REAL EXTRACTION ===
                         for game in games:
-                            # Fighter names - try several possible keys
-                            f1 = (game.get("AwayTeam") or game.get("Participant1") or 
-                                  game.get("Team1") or game.get("Away") or "Unknown")
-                            f2 = (game.get("HomeTeam") or game.get("Participant2") or 
-                                  game.get("Team2") or game.get("Home") or "Unknown")
+                            inner = game.get("Game", game)   # handle both nested and flat
 
+                            f1 = inner.get("AwayTeam", "Unknown")
+                            f2 = inner.get("HomeTeam", "Unknown")
                             fight_key = f"{f1} vs {f2}"
 
-                            # Odds - try several nesting levels
-                            away_line = game.get("AwayLine") or game.get("AwayTeamLine") or {}
-                            home_line = game.get("HomeLine") or game.get("HomeTeamLine") or {}
+                            # Odds - try several possible paths
+                            away_line = inner.get("AwayLine", {}) or inner.get("AwayTeamLine", {})
+                            home_line = inner.get("HomeLine", {}) or inner.get("HomeTeamLine", {})
                             odds1 = (away_line.get("MoneyLine", {}).get("Line") or 
                                      away_line.get("MoneyLine") or 
                                      away_line.get("Line") or "N/A")
@@ -88,7 +85,7 @@ def scrape_ufc_moneyline():
         print(f"✅ Scraped {len(fights)} potential fights")
 
         if len(fights) == 0:
-            print("🔍 Check the 📋 Game keys and sample above — we'll fix the keys in the next version.")
+            print("🔍 Still 0 — check the 📋 Game inner keys above.")
 
         return fights
 
