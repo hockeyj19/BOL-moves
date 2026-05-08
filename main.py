@@ -6,7 +6,7 @@ import requests
 from bs4 import BeautifulSoup
 import re
 
-print("🚀 UFC BetOnline Monitor started (STABLE v11 - LARGE DEBUG)")
+print("🚀 UFC BetOnline Monitor started (STABLE v12 - LARGE DEBUG)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
@@ -34,15 +34,17 @@ def scrape_ufc_moneyline():
 
     full_text = r.text
 
-    # LARGE DEBUG - first 15,000 characters
-    print("🔍 DEBUG: First 15,000 characters of page:")
-    print(repr(full_text[:15000]))
+    # LARGE DEBUG DUMP - first 25,000 characters
+    print("🔍 DEBUG: First 25,000 characters of page:")
+    print(repr(full_text[:25000]))
 
-    # Also search for known real fighters from your screenshots
-    known_fighters = ["Marco Tulio", "Roman Kopylov", "William Gomis", "Pat Sabatini", "Djorden Santos", "Baisangur Susurkaev", "Jared Gordon", "Jim Miller"]
-    for fighter in known_fighters:
-        if fighter.lower() in full_text.lower():
-            print(f"🔍 Found known fighter in page: {fighter}")
+    # Extra targeted debug for real fight blocks
+    print("🔍 DEBUG: Searching for blocks containing 'UFC' or 'Moneyline':")
+    soup = BeautifulSoup(full_text, "html.parser")
+    for block in soup.find_all(string=lambda text: text and ("UFC" in text.upper() or "Moneyline" in text)):
+        text = str(block).strip()
+        if len(text) > 20:  # only meaningful blocks
+            print("   →", repr(text[:300]))
 
     fights = []
     odds_pattern = re.compile(r'([+-]\d{2,4})')
@@ -72,7 +74,7 @@ def scrape_ufc_moneyline():
     print(f"✅ Scraped {len(fights)} potential UFC fights")
     return fights
 
-# ====================== REST OF CODE (unchanged) ======================
+# ====================== REST OF CODE ======================
 def load_history():
     try:
         with open(DATA_FILE, "r") as f:
