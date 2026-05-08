@@ -6,7 +6,7 @@ import requests
 from bs4 import BeautifulSoup
 import re
 
-print("🚀 UFC BetOnline Monitor started (STABLE v14 - FULL PAGE DEBUG)")
+print("🚀 UFC BetOnline Monitor started (STABLE v15 - MAX GARBAGE FILTER)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
@@ -20,7 +20,13 @@ if not DISCORD_WEBHOOK_URL:
 
 headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
-GARBAGE = {"betonline", "vip", "rewards", "crypto", "tutorial", "privacy", "policy", "wrapper", "jds", "js", "betslip", "feature_", "webappconfig", "chashout", "new_relic", "sas_rollout", "kameleoon", "diffusion", "bff_", "key_cloak"}
+GARBAGE = {
+    "betonline", "vip", "rewards", "crypto", "tutorial", "privacy", "policy", "wrapper", 
+    "jds", "js", "betslip", "feature_", "webappconfig", "chashout", "new_relic", 
+    "sas_rollout", "kameleoon", "diffusion", "bff_", "key_cloak", "newrelic", 
+    "gtm", "intercom", "xtremepush", "strapi", "cashoutapi", "edgetier", 
+    "surveymonkey", "widget"
+}
 
 def scrape_ufc_moneyline():
     print(f"🌐 Scraping at {datetime.datetime.now().strftime('%H:%M:%S')}")
@@ -33,10 +39,6 @@ def scrape_ufc_moneyline():
         return []
 
     full_text = r.text
-
-    # FULL PAGE DEBUG DUMP (327k characters)
-    print("🔍 DEBUG: FULL PAGE CONTENT (first run only for diagnosis):")
-    print(repr(full_text))
 
     fights = []
     odds_pattern = re.compile(r'([+-]\d{2,4})')
@@ -64,9 +66,13 @@ def scrape_ufc_moneyline():
             print(f"✅ Found fight: {fight_key} | {odds[0]} vs {odds[1]}")
 
     print(f"✅ Scraped {len(fights)} potential UFC fights")
+    if len(fights) == 0:
+        print("🔍 DEBUG: Still 0 fights - dumping first 15,000 chars for diagnosis:")
+        print(repr(full_text[:15000]))
+
     return fights
 
-# ====================== REST OF CODE (unchanged) ======================
+# ====================== REST OF CODE ======================
 def load_history():
     try:
         with open(DATA_FILE, "r") as f:
