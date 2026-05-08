@@ -6,7 +6,7 @@ import requests
 from bs4 import BeautifulSoup
 import re
 
-print("🚀 UFC BetOnline Monitor started (STABLE v12 - LARGE DEBUG)")
+print("🚀 UFC BetOnline Monitor started (STABLE v14 - FULL PAGE DEBUG)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
@@ -20,7 +20,7 @@ if not DISCORD_WEBHOOK_URL:
 
 headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
-GARBAGE = {"betonline", "vip", "rewards", "crypto", "tutorial", "privacy", "policy", "wrapper", "jds", "js", "betslip"}
+GARBAGE = {"betonline", "vip", "rewards", "crypto", "tutorial", "privacy", "policy", "wrapper", "jds", "js", "betslip", "feature_", "webappconfig", "chashout", "new_relic", "sas_rollout", "kameleoon", "diffusion", "bff_", "key_cloak"}
 
 def scrape_ufc_moneyline():
     print(f"🌐 Scraping at {datetime.datetime.now().strftime('%H:%M:%S')}")
@@ -34,17 +34,9 @@ def scrape_ufc_moneyline():
 
     full_text = r.text
 
-    # LARGE DEBUG DUMP - first 25,000 characters
-    print("🔍 DEBUG: First 25,000 characters of page:")
-    print(repr(full_text[:25000]))
-
-    # Extra targeted debug for real fight blocks
-    print("🔍 DEBUG: Searching for blocks containing 'UFC' or 'Moneyline':")
-    soup = BeautifulSoup(full_text, "html.parser")
-    for block in soup.find_all(string=lambda text: text and ("UFC" in text.upper() or "Moneyline" in text)):
-        text = str(block).strip()
-        if len(text) > 20:  # only meaningful blocks
-            print("   →", repr(text[:300]))
+    # FULL PAGE DEBUG DUMP (327k characters)
+    print("🔍 DEBUG: FULL PAGE CONTENT (first run only for diagnosis):")
+    print(repr(full_text))
 
     fights = []
     odds_pattern = re.compile(r'([+-]\d{2,4})')
@@ -74,7 +66,7 @@ def scrape_ufc_moneyline():
     print(f"✅ Scraped {len(fights)} potential UFC fights")
     return fights
 
-# ====================== REST OF CODE ======================
+# ====================== REST OF CODE (unchanged) ======================
 def load_history():
     try:
         with open(DATA_FILE, "r") as f:
