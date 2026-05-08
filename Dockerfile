@@ -1,6 +1,6 @@
 FROM python:3.12-slim
 
-# Install system dependencies required by Playwright
+# System dependencies required by Playwright Chromium
 RUN apt-get update && apt-get install -y \
     wget \
     curl \
@@ -27,8 +27,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright browsers
-RUN playwright install chromium --with-deps
+# FIXED: Use python -m to run playwright
+RUN python -m playwright install chromium --with-deps
 
 COPY main.py .
 
