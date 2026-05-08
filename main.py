@@ -7,7 +7,7 @@ import re
 from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
 
-print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v8 - MONEYLINE TARGETED)")
+print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v9 - IMPROVED PAIRING)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
@@ -42,7 +42,7 @@ def scrape_ufc_moneyline():
         odds_pattern = re.compile(r'([+-]\d{2,4})')
         name_pattern = re.compile(r'([A-Z][A-Za-z\']{4,40}\s[A-Z][A-Za-z\']{4,40})')
 
-        # Target "Moneyline" sections directly
+        # Improved: split on "Moneyline" and take the immediate following names + odds
         for block in re.split(r'Moneyline', full_text):
             if "UFC" not in block.upper():
                 continue
@@ -78,7 +78,7 @@ def scrape_ufc_moneyline():
         print(f"❌ Playwright error: {e}")
         return []
 
-# ====================== REST OF CODE (unchanged) ======================
+# ====================== REST OF CODE ======================
 def load_history():
     try:
         with open(DATA_FILE, "r") as f:
