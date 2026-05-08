@@ -6,7 +6,7 @@ import requests
 from bs4 import BeautifulSoup
 import re
 
-print("🚀 UFC BetOnline Monitor started (STABLE SIMPLE VERSION)")
+print("🚀 UFC BetOnline Monitor started (STABLE v8 - AGGRESSIVE PARSER)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
@@ -35,8 +35,10 @@ def scrape_ufc_moneyline():
 
     fights = []
     odds_pattern = re.compile(r'([+-]\d{2,4})')
-    name_pattern = re.compile(r'([A-Z][A-Za-z\']{3,30}\s[A-Z][A-Za-z\']{3,30})')
+    # Strong name pattern for real fighters
+    name_pattern = re.compile(r'([A-Z][A-Za-z\']{2,30}\s[A-Z][A-Za-z\']{2,30})')
 
+    # Search entire page text
     for line in full_text.splitlines():
         if "UFC" not in line.upper():
             continue
@@ -46,6 +48,7 @@ def scrape_ufc_moneyline():
             fighter1 = names[0].strip()
             fighter2 = names[1].strip()
             fight_key = f"{fighter1} vs {fighter2}"
+            # Ignore obvious garbage
             if any(g in fight_key.lower() for g in ["crypto", "privacy", "tutorial", "policy", "wrapper", "jds", "js"]):
                 continue
             fights.append({
@@ -59,8 +62,13 @@ def scrape_ufc_moneyline():
             print(f"✅ Found fight: {fight_key} | {odds[0]} vs {odds[1]}")
 
     print(f"✅ Scraped {len(fights)} potential UFC fights")
+    if len(fights) == 0:
+        print("🔍 DEBUG: Still 0 fights - dumping first 700 chars:")
+        print(repr(full_text[:700]))
+
     return fights
 
+# ====================== HISTORY & MOVEMENT ======================
 def load_history():
     try:
         with open(DATA_FILE, "r") as f:
@@ -108,6 +116,7 @@ def send_discord(message):
     except Exception as e:
         print("Discord error:", e)
 
+# ====================== MAIN LOOP ======================
 if __name__ == "__main__":
     while True:
         current_fights = scrape_ufc_moneyline()
