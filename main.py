@@ -1,489 +1,150 @@
 import os
-import re
 import time
-import logging
-import sqlite3
+import json
 import datetime
 import requests
+from bs4 import BeautifulSoup
+import re
 
-from playwright.sync_api import sync_playwright
+print("🚀 UFC BetOnline Monitor started (LIGHT version - DEBUG MODE)")
 
-# =========================================================
-# CONFIG
-# =========================================================
-
+# ========================= CONFIG =========================
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
-
+DATA_FILE = "/tmp/ufc_odds_history.json"
 POLL_INTERVAL_SECONDS = 600
 MIN_MOVEMENT_POINTS = 10
-ALERT_COOLDOWN_MINUTES = 30
-
-DB_FILE = "ufc_monitor.db"
-
-# =========================================================
-# LOGGING
-# =========================================================
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s"
-)
-
-logger = logging.getLogger(__name__)
-
-# =========================================================
-# VALIDATION
-# =========================================================
+# ========================================================
 
 if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+    print("❌ Missing Telegram credentials!")
     raise ValueError("Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID")
 
-# =========================================================
-# DATABASE
-# =========================================================
+headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
+}
 
-def init_db():
-
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS odds (
-        fight_key TEXT PRIMARY KEY,
-        fighter1 TEXT,
-        fighter2 TEXT,
-        fighter1_odds INTEGER,
-        fighter2_odds INTEGER,
-        updated_at TEXT
-    )
-    """)
-
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS alerts (
-        fight_key TEXT PRIMARY KEY,
-        last_alert_time TEXT
-    )
-    """)
-
-    conn.commit()
-    conn.close()
-
-# =========================================================
-# TELEGRAM
-# =========================================================
-
-def send_telegram(message):
-
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-
-    payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": message
-    }
-
+def scrape_ufc_moneyline():
+    print(f"🌐 Scraping at {datetime.datetime.now().strftime('%H:%M:%S')}")
     try:
-
-        r = requests.post(
-            url,
-            json=payload,
-            timeout=15
-        )
-
+        r = requests.get(URL, headers=headers, timeout=20)
         r.raise_for_status()
-
-        logger.info("Telegram alert sent")
-
+        print(f"✅ Page loaded ({len(r.text):,} characters)")
     except Exception as e:
+        print(f"❌ Request failed: {e}")
+        return []
 
-        logger.error(f"Telegram error: {e}")
+    soup = BeautifulSoup(r.text, "html.parser")
+    
+    page_text = r.text.lower()
+    has_ufc = "ufc" in page_text
+    print(f"📊 Does the page contain 'UFC'? → {has_ufc}")
 
-# =========================================================
-# HELPERS
-# =========================================================
+    ufc_blocks = soup.find_all(string=lambda text: text and "UFC" in text.upper())
+    print(f"📊 Found {len(ufc_blocks)} text blocks containing 'UFC'")
 
-def normalize_fight_key(f1, f2):
+    odds_pattern = re.compile(r'([+-]\d{2,4})')
+    all_odds = odds_pattern.findall(r.text)
+    print(f"📊 Found {len(all_odds)} potential American odds on the entire page")
 
-    fighters = sorted([
-        f1.strip(),
-        f2.strip()
-    ])
-
-    return f"{fighters[0]} vs {fighters[1]}"
-
-def parse_odds(value):
-
-    if not value:
-        return None
-
-    value = value.strip()
-
-    if re.match(r'^[+-]\d+$', value):
-        return int(value)
-
-    return None
-
-def should_alert(fight_key):
-
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-
-    c.execute("""
-    SELECT last_alert_time
-    FROM alerts
-    WHERE fight_key = ?
-    """, (fight_key,))
-
-    row = c.fetchone()
-
-    conn.close()
-
-    if not row:
-        return True
-
-    last_alert = datetime.datetime.fromisoformat(row[0])
-
-    diff = datetime.datetime.utcnow() - last_alert
-
-    return diff.total_seconds() > (
-        ALERT_COOLDOWN_MINUTES * 60
-    )
-
-def update_alert_timestamp(fight_key):
-
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-
-    now = datetime.datetime.utcnow().isoformat()
-
-    c.execute("""
-    INSERT OR REPLACE INTO alerts (
-        fight_key,
-        last_alert_time
-    ) VALUES (?, ?)
-    """, (
-        fight_key,
-        now
-    ))
-
-    conn.commit()
-    conn.close()
-
-# =========================================================
-# SCRAPER
-# =========================================================
-
-def scrape_ufc_fights():
-
-    logger.info("Launching browser")
+    if ufc_blocks:
+        print("🔍 Sample UFC content found:")
+        for block in ufc_blocks[:3]:
+            print("   →", block.strip()[:150])
 
     fights = []
-
-    with sync_playwright() as p:
-
-        browser = p.chromium.launch(
-            headless=True,
-            args=[
-                "--disable-blink-features=AutomationControlled"
-            ]
-        )
-
-        page = browser.new_page()
-
-        page.set_extra_http_headers({
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/134.0.0.0 Safari/537.36"
-            )
-        })
-
+    rows = soup.select("div, section, tr, li, span")
+    for row in rows:
         try:
-
-            logger.info("Opening BetOnline MMA page")
-
-            page.goto(
-                URL,
-                wait_until="networkidle",
-                timeout=60000
-            )
-
-            page.wait_for_timeout(5000)
-
-            body_text = page.locator("body").inner_text()
-
-            lines = body_text.split("\n")
-
-            cleaned = []
-
-            for line in lines:
-
-                line = line.strip()
-
-                if not line:
-                    continue
-
-                cleaned.append(line)
-
-            logger.info(
-                f"Collected {len(cleaned)} text lines"
-            )
-
-            odds_pattern = re.compile(r'^[+-]\d+$')
-
-            banned_words = [
-                "UFC",
-                "Bellator",
-                "PFL",
-                "ONE",
-                "BJJ",
-                "Main Card",
-                "Prelims",
-                "Fight Props",
-                "Method",
-                "Round"
-            ]
-
-            for i in range(len(cleaned) - 3):
-
-                try:
-
-                    fighter1 = cleaned[i]
-                    fighter2 = cleaned[i + 1]
-
-                    odds1 = cleaned[i + 2]
-                    odds2 = cleaned[i + 3]
-
-                    if (
-                        odds_pattern.match(odds1)
-                        and odds_pattern.match(odds2)
-                    ):
-
-                        if len(fighter1) < 3:
-                            continue
-
-                        if len(fighter2) < 3:
-                            continue
-
-                        if any(
-                            word.lower() in fighter1.lower()
-                            for word in banned_words
-                        ):
-                            continue
-
-                        if any(
-                            word.lower() in fighter2.lower()
-                            for word in banned_words
-                        ):
-                            continue
-
-                        fight_key = normalize_fight_key(
-                            fighter1,
-                            fighter2
-                        )
-
-                        fights.append({
-                            "fight_key": fight_key,
-                            "fighter1": fighter1,
-                            "fighter2": fighter2,
-                            "fighter1_odds": int(odds1),
-                            "fighter2_odds": int(odds2)
-                        })
-
-                except Exception:
-                    continue
-
-            browser.close()
-
-        except Exception as e:
-
-            logger.error(f"Scraper failure: {e}")
-
-            try:
-                browser.close()
-            except:
-                pass
-
-    unique = {}
-
-    for fight in fights:
-        unique[fight["fight_key"]] = fight
-
-    final_fights = list(unique.values())
-
-    logger.info(
-        f"Detected {len(final_fights)} UFC fights"
-    )
-
-    return final_fights
-
-# =========================================================
-# ODDS MOVEMENT
-# =========================================================
-
-def process_movements(fights):
-
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-
-    for fight in fights:
-
-        fight_key = fight["fight_key"]
-
-        c.execute("""
-        SELECT
-            fighter1_odds,
-            fighter2_odds
-        FROM odds
-        WHERE fight_key = ?
-        """, (fight_key,))
-
-        old = c.fetchone()
-
-        if old:
-
-            old_f1 = old[0]
-            old_f2 = old[1]
-
-            new_f1 = fight["fighter1_odds"]
-            new_f2 = fight["fighter2_odds"]
-
-            diff1 = abs(new_f1 - old_f1)
-            diff2 = abs(new_f2 - old_f2)
-
-            if diff1 >= MIN_MOVEMENT_POINTS:
-
-                if should_alert(fight_key):
-
-                    direction = (
-                        "↑"
-                        if new_f1 > old_f1
-                        else "↓"
-                    )
-
-                    msg = (
-                        f"🔄 {fight['fighter1']} "
-                        f"vs "
-                        f"{fight['fighter2']}\n"
-                        f"{fight['fighter1']}: "
-                        f"{old_f1} → {new_f1} "
-                        f"({direction}{diff1})"
-                    )
-
-                    logger.info(msg)
-
-                    send_telegram(msg)
-
-                    update_alert_timestamp(
-                        fight_key
-                    )
-
-            if diff2 >= MIN_MOVEMENT_POINTS:
-
-                if should_alert(fight_key):
-
-                    direction = (
-                        "↑"
-                        if new_f2 > old_f2
-                        else "↓"
-                    )
-
-                    msg = (
-                        f"🔄 {fight['fighter1']} "
-                        f"vs "
-                        f"{fight['fighter2']}\n"
-                        f"{fight['fighter2']}: "
-                        f"{old_f2} → {new_f2} "
-                        f"({direction}{diff2})"
-                    )
-
-                    logger.info(msg)
-
-                    send_telegram(msg)
-
-                    update_alert_timestamp(
-                        fight_key
-                    )
-
-        c.execute("""
-        INSERT OR REPLACE INTO odds (
-            fight_key,
-            fighter1,
-            fighter2,
-            fighter1_odds,
-            fighter2_odds,
-            updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?)
-        """, (
-            fight["fight_key"],
-            fight["fighter1"],
-            fight["fighter2"],
-            fight["fighter1_odds"],
-            fight["fighter2_odds"],
-            datetime.datetime.utcnow().isoformat()
-        ))
-
-    conn.commit()
-    conn.close()
-
-# =========================================================
-# MAIN LOOP
-# =========================================================
-
-def main():
-
-    logger.info(
-        "Starting UFC BetOnline Monitor"
-    )
-
-    init_db()
-
-    send_telegram(
-        "✅ UFC BetOnline Monitor started"
-    )
-
-    while True:
-
-        cycle_start = time.time()
-
-        try:
-
-            logger.info(
-                "Beginning scrape cycle"
-            )
-
-            fights = scrape_ufc_fights()
-
-            if fights:
-                process_movements(fights)
-            else:
-                logger.warning(
-                    "No fights detected"
-                )
-
-        except Exception as e:
-
-            logger.error(
-                f"Main loop error: {e}"
-            )
-
-        elapsed = time.time() - cycle_start
-
-        sleep_time = max(
-            0,
-            POLL_INTERVAL_SECONDS - elapsed
-        )
-
-        logger.info(
-            f"Sleeping "
-            f"{round(sleep_time)} seconds"
-        )
-
-        time.sleep(sleep_time)
-
-# =========================================================
+            row_text = row.get_text(strip=True)
+            if "UFC" not in row_text.upper():
+                continue
+
+            odds_in_row = odds_pattern.findall(row_text)
+            if len(odds_in_row) >= 2:
+                names = re.findall(r'([A-Za-z\s\.\'-]{5,35})', row_text)
+                if len(names) >= 2:
+                    fighter1 = names[0].strip()
+                    fighter2 = names[1].strip()
+                    fight_key = f"{fighter1} vs {fighter2}"
+                    fights.append({
+                        "fight": fight_key,
+                        "fighter1": fighter1,
+                        "fighter1_odds": odds_in_row[0],
+                        "fighter2": fighter2,
+                        "fighter2_odds": odds_in_row[1],
+                        "timestamp": datetime.datetime.now().isoformat()
+                    })
+        except:
+            continue
+
+    print(f"✅ Scraped {len(fights)} potential UFC fights")
+    if len(fights) == 0:
+        print("🔍 DEBUG: No fights detected - page is likely JavaScript heavy")
+
+    return fights
+
+def load_history():
+    try:
+        with open(DATA_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return {}
+
+def save_history(current_fights):
+    with open(DATA_FILE, "w") as f:
+        json.dump({f["fight"]: f for f in current_fights}, f, indent=2)
+
+def parse_american_odds(odds_str):
+    if not odds_str:
+        return None
+    cleaned = str(odds_str).strip()
+    if cleaned.startswith(('+', '-')) and cleaned[1:].isdigit():
+        return int(cleaned)
+    return None
+
+def detect_movements(old_data, new_fights):
+    messages = []
+    for fight in new_fights:
+        key = fight["fight"]
+        if key in old_data:
+            old = old_data[key]
+            for fk in ["fighter1", "fighter2"]:
+                old_odds = old.get(f"{fk}_odds")
+                new_odds = fight.get(f"{fk}_odds")
+                if old_odds != new_odds:
+                    old_val = parse_american_odds(old_odds)
+                    new_val = parse_american_odds(new_odds)
+                    if old_val is not None and new_val is not None:
+                        diff = abs(new_val - old_val)
+                        if diff >= MIN_MOVEMENT_POINTS:
+                            direction = '↑' if new_val > old_val else '↓'
+                            msg = f"🔄 **{key}**\n{fight[fk]} odds moved: {old_odds} → **{new_odds}** ({direction}{diff} pts)"
+                            messages.append(msg)
+    return messages
+
+def send_telegram(message):
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
+    try:
+        requests.post(url, json=payload, timeout=10)
+        print("📨 Telegram sent")
+    except Exception as e:
+        print("Telegram error:", e)
 
 if __name__ == "__main__":
-    main()
+    while True:
+        current_fights = scrape_ufc_moneyline()
+        if current_fights:
+            old_data = load_history()
+            movements = detect_movements(old_data, current_fights)
+            for msg in movements:
+                print(msg)
+                send_telegram(msg)
+            save_history(current_fights)
+        else:
+            print("⚠️ No fights found this cycle")
+
+        print(f"⏳ Sleeping {POLL_INTERVAL_SECONDS//60} minutes...")
+        time.sleep(POLL_INTERVAL_SECONDS)
