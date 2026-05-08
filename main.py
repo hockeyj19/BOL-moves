@@ -3,10 +3,9 @@ import time
 import json
 import datetime
 import requests
-from bs4 import BeautifulSoup
-import re
+from playwright.sync_api import sync_playwright
 
-print("🚀 UFC BetOnline Monitor started (STABLE v17 - STRICT NAME + ODDS FILTER)")
+print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v1 - FULL PAGE RENDER)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
@@ -18,69 +17,52 @@ if not DISCORD_WEBHOOK_URL:
     print("❌ Missing DISCORD_WEBHOOK_URL!")
     raise ValueError("Missing DISCORD_WEBHOOK_URL")
 
-headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-
-GARBAGE = {
-    "betonline", "vip", "rewards", "crypto", "tutorial", "privacy", "policy", "wrapper",
-    "jds", "js", "betslip", "feature_", "webappconfig", "chashout", "new_relic",
-    "sas_rollout", "kameleoon", "diffusion", "bff_", "key_cloak", "newrelic",
-    "gtm", "intercom", "xtremepush", "strapi", "cashoutapi", "edgetier",
-    "surveymonkey", "widget", "cash", "drop", "enter", "code", "promo", "bonus", "reward"
-}
-
-# Much stricter name pattern - real fighter names only
-name_pattern = re.compile(r'([A-Z][A-Za-z\']{4,30}\s[A-Z][A-Za-z\']{4,30})')
-odds_pattern = re.compile(r'([+-]\d{3,4})')   # only realistic odds (-105 and above in magnitude)
-
 def scrape_ufc_moneyline():
     print(f"🌐 Scraping at {datetime.datetime.now().strftime('%H:%M:%S')}")
-    try:
-        r = requests.get(URL, headers=headers, timeout=20)
-        r.raise_for_status()
-        print(f"✅ Page loaded ({len(r.text):,} characters)")
-    except Exception as e:
-        print(f"❌ Request failed: {e}")
-        return []
-
-    full_text = r.text
     fights = []
-    ufclines = 0
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(URL, wait_until="networkidle", timeout=30000)
+        
+        # Wait for the dynamic content to load
+        page.wait_for_timeout(8000)  # 8 seconds for JS to render fights
+        
+        content = page.content()
+        browser.close()
 
-    for line in full_text.splitlines():
-        if "UFC" in line.upper() or "MMA" in line.upper():
-            ufclines += 1
-            odds = odds_pattern.findall(line)
-            names = name_pattern.findall(line)
+    # Same parsing logic as before but now on fully rendered page
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(content, "html.parser")
+    odds_pattern = re.compile(r'([+-]\d{2,4})')
+    name_pattern = re.compile(r'([A-Z][A-Za-z\']{4,30}\s[A-Z][A-Za-z\']{4,30})')
 
-            if len(odds) >= 2 and len(names) >= 2:
-                fighter1 = names[0].strip()
-                fighter2 = names[1].strip()
-                fight_key = f"{fighter1} vs {fighter2}"
+    for row in soup.find_all('div', class_=lambda x: x and 'fight' in x.lower() or 'row' in x.lower()):
+        text = row.get_text()
+        if "UFC" not in text.upper():
+            continue
+        odds = odds_pattern.findall(text)
+        names = name_pattern.findall(text)
+        if len(odds) >= 2 and len(names) >= 2:
+            fighter1 = names[0].strip()
+            fighter2 = names[1].strip()
+            fight_key = f"{fighter1} vs {fighter2}"
+            fights.append({
+                "fight": fight_key,
+                "fighter1": fighter1,
+                "fighter1_odds": odds[0],
+                "fighter2": fighter2,
+                "fighter2_odds": odds[1],
+                "timestamp": datetime.datetime.now().isoformat()
+            })
+            print(f"✅ Found fight: {fight_key} | {odds[0]} vs {odds[1]}")
 
-                # Final garbage check
-                if any(g in fight_key.lower() for g in GARBAGE):
-                    continue
-
-                fights.append({
-                    "fight": fight_key,
-                    "fighter1": fighter1,
-                    "fighter1_odds": odds[0],
-                    "fighter2": fighter2,
-                    "fighter2_odds": odds[1],
-                    "timestamp": datetime.datetime.now().isoformat()
-                })
-                print(f"✅ Found fight: {fight_key} | {odds[0]} vs {odds[1]}")
-
-    print(f"📊 Found {ufclines} lines containing UFC/MMA")
     print(f"✅ Scraped {len(fights)} potential fights")
-
-    if len(fights) == 0:
-        print("🔍 Still 0 real fights - dumping first 20,000 chars for diagnosis:")
-        print(repr(full_text[:20000]))
-
     return fights
 
-# ====================== REST OF CODE (unchanged) ======================
+# ====================== REST OF CODE (same as before) ======================
+import re  # for the patterns above
+
 def load_history():
     try:
         with open(DATA_FILE, "r") as f:
