@@ -6,20 +6,19 @@ import requests
 from bs4 import BeautifulSoup
 import re
 
-print("🚀 UFC BetOnline Monitor started (LIGHT version - IMPROVED PARSER)")
+print("🚀 UFC BetOnline Monitor started (DISCORD - IMPROVED PARSER)")
 
 # ========================= CONFIG =========================
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
 DATA_FILE = "/tmp/ufc_odds_history.json"
 POLL_INTERVAL_SECONDS = 600
 MIN_MOVEMENT_POINTS = 10
 # ========================================================
 
-if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-    print("❌ Missing Telegram credentials!")
-    raise ValueError("Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID")
+if not DISCORD_WEBHOOK_URL:
+    print("❌ Missing DISCORD_WEBHOOK_URL environment variable!")
+    raise ValueError("Missing DISCORD_WEBHOOK_URL")
 
 headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
@@ -37,22 +36,20 @@ def scrape_ufc_moneyline():
 
     soup = BeautifulSoup(r.text, "html.parser")
     
-    # Debug
     print(f"📊 'UFC' in page? → {'UFC' in r.text.upper()}")
+    
     odds_pattern = re.compile(r'([+-]\d{2,4})')
     all_odds = odds_pattern.findall(r.text)
-    print(f"📊 Found {len(all_odds)} American odds on page")
+    print(f"📊 Found {len(all_odds)} potential American odds on page")
 
     fights = []
 
-    # Stronger search: look for blocks that contain "UFC" + at least 2 odds
     for block in soup.find_all(string=lambda text: text and "UFC" in text.upper()):
         try:
             block_text = str(block).strip()
             odds_in_block = odds_pattern.findall(block_text)
             
             if len(odds_in_block) >= 2:
-                # Try to extract fighter names (long alphabetic strings)
                 names = re.findall(r'([A-Za-z][A-Za-z\s\.\'-]{5,40})', block_text)
                 if len(names) >= 2:
                     fighter1 = names[0].strip()
@@ -72,13 +69,13 @@ def scrape_ufc_moneyline():
 
     print(f"✅ Scraped {len(fights)} potential UFC fights")
     if len(fights) == 0:
-        print("🔍 Still 0 fights — dumping first few 'UFC' blocks for debugging:")
+        print("🔍 DEBUG: Still no fights found - dumping sample UFC blocks:")
         for block in list(soup.find_all(string=lambda text: text and "UFC" in text.upper()))[:5]:
             print("   →", str(block).strip()[:200])
 
     return fights
 
-# ====================== Rest of code (unchanged) ======================
+# ====================== Rest of code ======================
 def load_history():
     try:
         with open(DATA_FILE, "r") as f:
@@ -118,14 +115,13 @@ def detect_movements(old_data, new_fights):
                             messages.append(msg)
     return messages
 
-def send_telegram(message):
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
+def send_discord(message):
+    payload = {"content": message}
     try:
-        requests.post(url, json=payload, timeout=10)
-        print("📨 Telegram sent")
+        requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10)
+        print("📨 Discord message sent")
     except Exception as e:
-        print("Telegram error:", e)
+        print("Discord error:", e)
 
 if __name__ == "__main__":
     while True:
@@ -135,7 +131,7 @@ if __name__ == "__main__":
             movements = detect_movements(old_data, current_fights)
             for msg in movements:
                 print(msg)
-                send_telegram(msg)
+                send_discord(msg)
             save_history(current_fights)
         else:
             print("⚠️ No fights found this cycle")
