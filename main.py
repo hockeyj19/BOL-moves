@@ -6,49 +6,44 @@ import requests
 from bs4 import BeautifulSoup
 import re
 
-print("🚀 UFC BetOnline Monitor started (DISCORD - IMPROVED PARSER)")
+print("🚀 UFC BetOnline Monitor started (DISCORD - TEST MODE)")
 
-# ========================= CONFIG =========================
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
 DATA_FILE = "/tmp/ufc_odds_history.json"
-POLL_INTERVAL_SECONDS = 600
+POLL_INTERVAL_SECONDS = 60   # shortened for testing
 MIN_MOVEMENT_POINTS = 10
-# ========================================================
 
 if not DISCORD_WEBHOOK_URL:
-    print("❌ Missing DISCORD_WEBHOOK_URL environment variable!")
+    print("❌ Missing DISCORD_WEBHOOK_URL!")
     raise ValueError("Missing DISCORD_WEBHOOK_URL")
 
-headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
-}
+headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+
+print("✅ Starting scrape loop...")
 
 def scrape_ufc_moneyline():
     print(f"🌐 Scraping at {datetime.datetime.now().strftime('%H:%M:%S')}")
     try:
-        r = requests.get(URL, headers=headers, timeout=20)
+        r = requests.get(URL, headers=headers, timeout=15)
         r.raise_for_status()
         print(f"✅ Page loaded ({len(r.text):,} characters)")
     except Exception as e:
         print(f"❌ Request failed: {e}")
         return []
 
+    # ... (rest of the scrape function remains the same)
     soup = BeautifulSoup(r.text, "html.parser")
-    
     print(f"📊 'UFC' in page? → {'UFC' in r.text.upper()}")
-    
     odds_pattern = re.compile(r'([+-]\d{2,4})')
     all_odds = odds_pattern.findall(r.text)
-    print(f"📊 Found {len(all_odds)} potential American odds on page")
+    print(f"📊 Found {len(all_odds)} potential odds")
 
     fights = []
-
     for block in soup.find_all(string=lambda text: text and "UFC" in text.upper()):
         try:
             block_text = str(block).strip()
             odds_in_block = odds_pattern.findall(block_text)
-            
             if len(odds_in_block) >= 2:
                 names = re.findall(r'([A-Za-z][A-Za-z\s\.\'-]{5,40})', block_text)
                 if len(names) >= 2:
@@ -63,78 +58,29 @@ def scrape_ufc_moneyline():
                         "fighter2_odds": odds_in_block[1],
                         "timestamp": datetime.datetime.now().isoformat()
                     })
-                    print(f"✅ Found fight: {fight_key} | {odds_in_block[0]} vs {odds_in_block[1]}")
+                    print(f"✅ Found fight: {fight_key}")
         except:
             continue
 
-    print(f"✅ Scraped {len(fights)} potential UFC fights")
-    if len(fights) == 0:
-        print("🔍 DEBUG: Still no fights found - dumping sample UFC blocks:")
-        for block in list(soup.find_all(string=lambda text: text and "UFC" in text.upper()))[:5]:
-            print("   →", str(block).strip()[:200])
-
+    print(f"✅ Scraped {len(fights)} fights")
     return fights
 
-# ====================== Rest of code ======================
-def load_history():
-    try:
-        with open(DATA_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return {}
-
-def save_history(current_fights):
-    with open(DATA_FILE, "w") as f:
-        json.dump({f["fight"]: f for f in current_fights}, f, indent=2)
-
-def parse_american_odds(odds_str):
-    if not odds_str:
-        return None
-    cleaned = str(odds_str).strip()
-    if cleaned.startswith(('+', '-')) and cleaned[1:].isdigit():
-        return int(cleaned)
-    return None
-
-def detect_movements(old_data, new_fights):
-    messages = []
-    for fight in new_fights:
-        key = fight["fight"]
-        if key in old_data:
-            old = old_data[key]
-            for fk in ["fighter1", "fighter2"]:
-                old_odds = old.get(f"{fk}_odds")
-                new_odds = fight.get(f"{fk}_odds")
-                if old_odds != new_odds:
-                    old_val = parse_american_odds(old_odds)
-                    new_val = parse_american_odds(new_odds)
-                    if old_val is not None and new_val is not None:
-                        diff = abs(new_val - old_val)
-                        if diff >= MIN_MOVEMENT_POINTS:
-                            direction = '↑' if new_val > old_val else '↓'
-                            msg = f"🔄 **{key}**\n{fight[fk]} odds moved: {old_odds} → **{new_odds}** ({direction}{diff} pts)"
-                            messages.append(msg)
-    return messages
+# (rest of the code stays the same - load_history, save_history, detect_movements, send_discord, etc.)
 
 def send_discord(message):
     payload = {"content": message}
     try:
         requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10)
-        print("📨 Discord message sent")
+        print("📨 Discord sent")
     except Exception as e:
         print("Discord error:", e)
+
+# ====================== Rest of code ======================
+# ... (keep the rest of your functions exactly as they were)
 
 if __name__ == "__main__":
     while True:
         current_fights = scrape_ufc_moneyline()
-        if current_fights:
-            old_data = load_history()
-            movements = detect_movements(old_data, current_fights)
-            for msg in movements:
-                print(msg)
-                send_discord(msg)
-            save_history(current_fights)
-        else:
-            print("⚠️ No fights found this cycle")
-
-        print(f"⏳ Sleeping {POLL_INTERVAL_SECONDS//60} minutes...")
+        # ... (keep the rest of the loop the same)
+        print(f"⏳ Sleeping {POLL_INTERVAL_SECONDS} seconds...")
         time.sleep(POLL_INTERVAL_SECONDS)
