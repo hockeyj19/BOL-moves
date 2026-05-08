@@ -6,7 +6,7 @@ import requests
 import re
 from playwright.sync_api import sync_playwright
 
-print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v22 - BUDDY'S GameOffering JSON)")
+print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v23 - OFFERING-BY-LEAGUE + BUDDY'S PARSER)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
@@ -28,56 +28,56 @@ def scrape_ufc_moneyline():
 
             def handle_response(response):
                 url = response.url.lower()
-                if any(x in url for x in ["offer", "gameoffering", "league", "mma", "ufc", "api", ".json"]):
-                    print(f"🔥 API RESPONSE → {response.url}")
+                if "offering-by-league" in url:
+                    print(f"🔥 FOUND OFFERING-BY-LEAGUE → {response.url}")
                     try:
-                        if "application/json" in response.headers.get("content-type", "") or response.url.endswith(".json"):
-                            data = response.json()
+                        data = response.json()
+                        print(f"   📊 Top-level keys: {list(data.keys()) if isinstance(data, dict) else 'not a dict'}")
 
-                            # === BUDDY'S EXACT STRUCTURE ===
-                            games = data.get("GameOffering", {}).get("GamesDescription", [])
-                            if games:
-                                print(f"✅ Found GameOffering with {len(games)} games!")
+                        # === BUDDY'S EXACT STRUCTURE ===
+                        game_offering = data.get("GameOffering", {}) or data.get("data", {}).get("GameOffering", {})
+                        games = game_offering.get("GamesDescription", [])
 
-                            for game in games:
-                                fighter1 = game.get("AwayTeam", "Unknown")
-                                fighter2 = game.get("HomeTeam", "Unknown")
-                                fight_key = f"{fighter1} vs {fighter2}"
+                        print(f"   📌 Found {len(games)} games in GameOffering")
 
-                                # Odds from AwayLine / HomeLine
-                                away_line = game.get("AwayLine", {}) or game.get("AwayTeamLine", {})
-                                home_line = game.get("HomeLine", {}) or game.get("HomeTeamLine", {})
+                        for game in games:
+                            fighter1 = game.get("AwayTeam", "Unknown")
+                            fighter2 = game.get("HomeTeam", "Unknown")
+                            fight_key = f"{fighter1} vs {fighter2}"
 
-                                odds1 = away_line.get("MoneyLine", {}).get("Line") or away_line.get("MoneyLine", "N/A")
-                                odds2 = home_line.get("MoneyLine", {}).get("Line") or home_line.get("MoneyLine", "N/A")
+                            # Odds
+                            away_line = game.get("AwayLine", {}) or {}
+                            home_line = game.get("HomeLine", {}) or {}
+                            odds1 = away_line.get("MoneyLine", {}).get("Line") or "N/A"
+                            odds2 = home_line.get("MoneyLine", {}).get("Line") or "N/A"
 
-                                if fighter1 != "Unknown" and fighter2 != "Unknown":
-                                    fights.append({
-                                        "fight": fight_key,
-                                        "fighter1": fighter1,
-                                        "fighter1_odds": str(odds1),
-                                        "fighter2": fighter2,
-                                        "fighter2_odds": str(odds2),
-                                        "timestamp": datetime.datetime.now().isoformat()
-                                    })
-                                    print(f"✅ Found fight: {fight_key} | {odds1} vs {odds2}")
+                            if fighter1 != "Unknown" and fighter2 != "Unknown":
+                                fights.append({
+                                    "fight": fight_key,
+                                    "fighter1": fighter1,
+                                    "fighter1_odds": str(odds1),
+                                    "fighter2": fighter2,
+                                    "fighter2_odds": str(odds2),
+                                    "timestamp": datetime.datetime.now().isoformat()
+                                })
+                                print(f"✅ Found fight: {fight_key} | {odds1} vs {odds2}")
 
                     except Exception as e:
-                        pass  # not JSON or parse failed
+                        print(f"   JSON parse error: {e}")
 
             page.on("response", handle_response)
 
             print("🌍 Navigating to BetOnline...")
             page.goto(URL, wait_until="load", timeout=60000)
-            print("⏳ Waiting for API calls...")
+            print("⏳ Waiting for offering-by-league JSON...")
             page.wait_for_timeout(20000)
 
             browser.close()
 
-        print(f"✅ Scraped {len(fights)} UFC fights from GameOffering JSON")
+        print(f"✅ Scraped {len(fights)} potential fights")
 
         if len(fights) == 0:
-            print("🔍 No fights found — check the 🔥 API RESPONSE lines above")
+            print("🔍 Check the 🔥 FOUND OFFERING-BY-LEAGUE lines above — we need to see the JSON structure.")
 
         return fights
 
