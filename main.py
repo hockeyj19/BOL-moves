@@ -6,7 +6,7 @@ import requests
 from bs4 import BeautifulSoup
 import re
 
-print("🚀 UFC BetOnline Monitor started (DISCORD - FINAL PARSER)")
+print("🚀 UFC BetOnline Monitor started (DISCORD - FINAL v3)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
@@ -31,41 +31,43 @@ def scrape_ufc_moneyline():
         return []
 
     soup = BeautifulSoup(r.text, "html.parser")
-    print(f"📊 'UFC' in page? → {'UFC' in r.text.upper()}")
-
-    odds_pattern = re.compile(r'([+-]\d{2,4})')
-    all_odds = odds_pattern.findall(r.text)
-    print(f"📊 Found {len(all_odds)} potential American odds")
 
     fights = []
-    # More aggressive search for UFC blocks
-    for block in soup.find_all(string=lambda text: text and "UFC" in text.upper()):
-        block_text = str(block).strip()
-        odds_in_block = odds_pattern.findall(block_text)
-        
-        if len(odds_in_block) >= 2:
-            # Better name extraction
-            names = re.findall(r'([A-Z][A-Za-z\s\.\'-]{4,35})', block_text)
-            if len(names) >= 2:
-                fighter1 = names[0].strip()
-                fighter2 = names[1].strip()
-                fight_key = f"{fighter1} vs {fighter2}"
-                fights.append({
-                    "fight": fight_key,
-                    "fighter1": fighter1,
-                    "fighter1_odds": odds_in_block[0],
-                    "fighter2": fighter2,
-                    "fighter2_odds": odds_in_block[1],
-                    "timestamp": datetime.datetime.now().isoformat()
-                })
-                print(f"✅ Found fight: {fight_key} | {odds_in_block[0]} vs {odds_in_block[1]}")
+    # Look for moneyline sections (this matches what we see in your screenshots)
+    for section in soup.find_all(string=lambda text: text and "Moneyline" in text):
+        try:
+            parent = section.parent.parent if section.parent else section
+            text = parent.get_text(strip=True, separator=" ")
+            
+            # Extract odds
+            odds_pattern = re.compile(r'([+-]\d{2,4})')
+            odds = odds_pattern.findall(text)
+            
+            if len(odds) >= 2:
+                # Extract fighter names (capitalized names)
+                names = re.findall(r'([A-Z][A-Za-z\s\.\'-]{4,35})', text)
+                if len(names) >= 2:
+                    fighter1 = names[0].strip()
+                    fighter2 = names[1].strip()
+                    fight_key = f"{fighter1} vs {fighter2}"
+                    
+                    fights.append({
+                        "fight": fight_key,
+                        "fighter1": fighter1,
+                        "fighter1_odds": odds[0],
+                        "fighter2": fighter2,
+                        "fighter2_odds": odds[1],
+                        "timestamp": datetime.datetime.now().isoformat()
+                    })
+                    print(f"✅ Found fight: {fight_key} | {odds[0]} vs {odds[1]}")
+        except:
+            continue
 
     print(f"✅ Scraped {len(fights)} potential UFC fights")
-
     if len(fights) == 0:
-        print("🔍 DEBUG: No fights found - showing first 5 UFC blocks:")
-        for block in list(soup.find_all(string=lambda text: text and "UFC" in text.upper()))[:5]:
-            print("   →", repr(str(block).strip()[:300]))
+        print("🔍 DEBUG: No fights found - dumping sample 'Moneyline' sections:")
+        for section in list(soup.find_all(string=lambda text: text and "Moneyline" in text))[:3]:
+            print("   →", repr(str(section.parent.get_text()[:300] if section.parent else section)[:300]))
 
     return fights
 
