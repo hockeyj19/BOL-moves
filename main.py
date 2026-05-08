@@ -37,7 +37,6 @@ def scrape_ufc_moneyline():
 
     soup = BeautifulSoup(r.text, "html.parser")
     
-    # === DEBUG INFO ===
     page_text = r.text.lower()
     has_ufc = "ufc" in page_text
     print(f"📊 Does the page contain 'UFC'? → {has_ufc}")
@@ -49,13 +48,11 @@ def scrape_ufc_moneyline():
     all_odds = odds_pattern.findall(r.text)
     print(f"📊 Found {len(all_odds)} potential American odds on the entire page")
 
-    # Sample of page content near UFC
     if ufc_blocks:
         print("🔍 Sample UFC content found:")
         for block in ufc_blocks[:3]:
             print("   →", block.strip()[:150])
 
-    # Try to scrape fights
     fights = []
     rows = soup.select("div, section, tr, li, span")
     for row in rows:
@@ -88,7 +85,6 @@ def scrape_ufc_moneyline():
 
     return fights
 
-# ====================== Rest of the code ======================
 def load_history():
     try:
         with open(DATA_FILE, "r") as f:
