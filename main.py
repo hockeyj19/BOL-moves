@@ -2,10 +2,11 @@ import os
 import time
 import json
 import datetime
-from playwright.sync_api import sync_playwright
+import requests
+from bs4 import BeautifulSoup
 import re
 
-print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT - FINAL)")
+print("🚀 UFC BetOnline Monitor started (STABLE SIMPLE VERSION)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
@@ -17,52 +18,49 @@ if not DISCORD_WEBHOOK_URL:
     print("❌ Missing DISCORD_WEBHOOK_URL!")
     raise ValueError("Missing DISCORD_WEBHOOK_URL")
 
+headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+
 def scrape_ufc_moneyline():
     print(f"🌐 Scraping at {datetime.datetime.now().strftime('%H:%M:%S')}")
-    fights = []
     try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-            page.goto(URL, timeout=60000)
-            page.wait_for_timeout(8000)   # Wait for JavaScript to load fights
-            content = page.content()
-            browser.close()
-
-        print(f"✅ Page fully rendered ({len(content):,} characters)")
-
-        odds_pattern = re.compile(r'([+-]\d{2,4})')
-        name_pattern = re.compile(r'([A-Z][A-Za-z\']{3,25}\s[A-Z][A-Za-z\']{3,25})')
-
-        for line in content.splitlines():
-            if "UFC" not in line.upper():
-                continue
-            odds = odds_pattern.findall(line)
-            names = name_pattern.findall(line)
-            if len(odds) >= 2 and len(names) >= 2:
-                fighter1 = names[0].strip()
-                fighter2 = names[1].strip()
-                fight_key = f"{fighter1} vs {fighter2}"
-                if any(g in fight_key.lower() for g in ["crypto", "privacy", "tutorial", "policy", "wrapper", "jds", "js"]):
-                    continue
-                fights.append({
-                    "fight": fight_key,
-                    "fighter1": fighter1,
-                    "fighter1_odds": odds[0],
-                    "fighter2": fighter2,
-                    "fighter2_odds": odds[1],
-                    "timestamp": datetime.datetime.now().isoformat()
-                })
-                print(f"✅ Found fight: {fight_key} | {odds[0]} vs {odds[1]}")
-
-        print(f"✅ Scraped {len(fights)} real UFC fights")
-        return fights
-
+        r = requests.get(URL, headers=headers, timeout=20)
+        r.raise_for_status()
+        print(f"✅ Page loaded ({len(r.text):,} characters)")
     except Exception as e:
-        print(f"❌ Playwright error: {e}")
+        print(f"❌ Request failed: {e}")
         return []
 
-# ====================== HISTORY & MOVEMENT ======================
+    full_text = r.text
+    print(f"📊 'UFC' in page? → {'UFC' in full_text.upper()}")
+
+    fights = []
+    odds_pattern = re.compile(r'([+-]\d{2,4})')
+    name_pattern = re.compile(r'([A-Z][A-Za-z\']{3,30}\s[A-Z][A-Za-z\']{3,30})')
+
+    for line in full_text.splitlines():
+        if "UFC" not in line.upper():
+            continue
+        odds = odds_pattern.findall(line)
+        names = name_pattern.findall(line)
+        if len(odds) >= 2 and len(names) >= 2:
+            fighter1 = names[0].strip()
+            fighter2 = names[1].strip()
+            fight_key = f"{fighter1} vs {fighter2}"
+            if any(g in fight_key.lower() for g in ["crypto", "privacy", "tutorial", "policy", "wrapper", "jds", "js"]):
+                continue
+            fights.append({
+                "fight": fight_key,
+                "fighter1": fighter1,
+                "fighter1_odds": odds[0],
+                "fighter2": fighter2,
+                "fighter2_odds": odds[1],
+                "timestamp": datetime.datetime.now().isoformat()
+            })
+            print(f"✅ Found fight: {fight_key} | {odds[0]} vs {odds[1]}")
+
+    print(f"✅ Scraped {len(fights)} potential UFC fights")
+    return fights
+
 def load_history():
     try:
         with open(DATA_FILE, "r") as f:
@@ -110,9 +108,7 @@ def send_discord(message):
     except Exception as e:
         print("Discord error:", e)
 
-# ====================== MAIN LOOP ======================
 if __name__ == "__main__":
-    import requests   # for send_discord
     while True:
         current_fights = scrape_ufc_moneyline()
         if current_fights:
