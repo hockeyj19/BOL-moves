@@ -1,4 +1,4 @@
-# ================================= UFC BETONLINE MONITOR (PLAYWRIGHT v18 - FIXED UFC PARSER) =================================
+# ================================= UFC BETONLINE MONITOR (PLAYWRIGHT v19 - WORKING UFC PARSER) =================================
 
 import os
 import time
@@ -10,7 +10,7 @@ import re
 from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
 
-print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v18 - FIXED UFC PARSER)")
+print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v19 - WORKING UFC PARSER)")
 
 # ================================= CONFIG =================================
 
@@ -62,6 +62,7 @@ GARBAGE = {
 # ================================= HELPERS =================================
 
 def parse_american_odds(odds_str):
+
     if not odds_str:
         return None
 
@@ -93,15 +94,19 @@ def scrape_ufc_moneyline():
 
             print("🌍 Navigating to BetOnline...")
 
-            page.goto(URL, wait_until="domcontentloaded", timeout=60000)
+            page.goto(
+                URL,
+                wait_until="domcontentloaded",
+                timeout=60000
+            )
 
             # allow sportsbook hydration
             page.wait_for_timeout(5000)
 
-            # force lazy-loaded fights to render
-            page.mouse.wheel(0, 6000)
+            # trigger lazy loading
+            page.mouse.wheel(0, 8000)
 
-            page.wait_for_timeout(2000)
+            page.wait_for_timeout(3000)
 
             content = page.content()
 
@@ -111,60 +116,103 @@ def scrape_ufc_moneyline():
 
         full_text = soup.get_text(separator=" ", strip=True)
 
-        # ================================= UFC REGEX EXTRACTION =================================
+        print(f"📄 Page text length: {len(full_text)}")
 
-        ufc_pattern = re.compile(
-            r'(\d+)\s*-\s*([A-Za-zÀ-ÿ\-\'. ]+?)\s+'
-            r'(\d+)\s*-\s*([A-Za-zÀ-ÿ\-\'. ]+?)\s+'
-            r'Moneyline\s+'
-            r'\2\s+([+-]\d+)\s+'
-            r'\4\s+([+-]\d+)',
-            re.MULTILINE
+        # ================================= UFC SECTION EXTRACTION =================================
+
+        ufc_sections = re.findall(
+            r'MMA\s*-\s*UFC.*?(?=MMA\s*-|$)',
+            full_text,
+            re.DOTALL | re.IGNORECASE
         )
 
-        matches = ufc_pattern.findall(full_text)
-
-        print(f"🔍 Regex matches found: {len(matches)}")
+        print(f"🔍 UFC sections found: {len(ufc_sections)}")
 
         seen = set()
 
-        for match in matches:
+        for section in ufc_sections:
 
-            fighter1 = " ".join(match[1].split()).strip()
-            fighter2 = " ".join(match[3].split()).strip()
+            # ================================= MAIN PARSER =================================
+            #
+            # Matches:
+            #
+            # 24133 - Marco Tulio
+            # 24134 - Roman Kopylov
+            # Moneyline
+            # Marco Tulio -183
+            # Roman Kopylov +158
+            #
+            # =================================
 
-            odds1 = match[4].strip()
-            odds2 = match[5].strip()
+            entries = re.findall(
+                r'([A-Za-zÀ-ÿ\-\'. ]+?)\s+([+-]\d+)',
+                section
+            )
 
-            fight_key = f"{fighter1} vs {fighter2}"
+            cleaned = []
 
-            # dedupe
-            if fight_key in seen:
-                continue
+            for name, odds in entries:
 
-            seen.add(fight_key)
+                name = " ".join(name.split()).strip()
 
-            # garbage filter
-            if any(g in fight_key.lower() for g in GARBAGE):
-                continue
+                # basic sanity filters
+                if len(name) < 4:
+                    continue
 
-            fights.append({
-                "fight": fight_key,
-                "fighter1": fighter1,
-                "fighter1_odds": odds1,
-                "fighter2": fighter2,
-                "fighter2_odds": odds2,
-                "timestamp": datetime.datetime.now().isoformat()
-            })
+                if any(g in name.lower() for g in GARBAGE):
+                    continue
 
-            print(f"✅ Found fight: {fight_key} | {odds1} vs {odds2}")
+                # skip market labels
+                if name.lower() in [
+                    "moneyline",
+                    "spread",
+                    "total",
+                    "over",
+                    "under"
+                ]:
+                    continue
+
+                cleaned.append((name, odds))
+
+            print(f"📊 Parsed entries: {len(cleaned)}")
+
+            # pair fighters sequentially
+            for i in range(0, len(cleaned) - 1, 2):
+
+                fighter1, odds1 = cleaned[i]
+                fighter2, odds2 = cleaned[i + 1]
+
+                # skip weird duplicates
+                if fighter1 == fighter2:
+                    continue
+
+                fight_key = f"{fighter1} vs {fighter2}"
+
+                if fight_key in seen:
+                    continue
+
+                seen.add(fight_key)
+
+                fights.append({
+                    "fight": fight_key,
+                    "fighter1": fighter1,
+                    "fighter1_odds": odds1,
+                    "fighter2": fighter2,
+                    "fighter2_odds": odds2,
+                    "timestamp": datetime.datetime.now().isoformat()
+                })
+
+                print(f"✅ Found fight: {fight_key} | {odds1} vs {odds2}")
 
         print(f"\n✅ FINAL UFC FIGHTS SCRAPED: {len(fights)}")
 
-        # debug dump if nothing found
+        # ================================= DEBUG =================================
+
         if len(fights) == 0:
-            print("\n🔍 DEBUG DUMP (first 8000 chars):\n")
-            print(repr(full_text[:8000]))
+
+            print("\n🔍 DEBUG DUMP (first 5000 chars):\n")
+
+            print(repr(full_text[:5000]))
 
         return fights
 
@@ -179,15 +227,19 @@ def scrape_ufc_moneyline():
 def load_history():
 
     try:
+
         with open(DATA_FILE, "r") as f:
+
             return json.load(f)
 
     except:
+
         return {}
 
 def save_history(current_fights):
 
     with open(DATA_FILE, "w") as f:
+
         json.dump(
             {f["fight"]: f for f in current_fights},
             f,
@@ -267,8 +319,11 @@ def send_discord(message):
         )
 
         if response.status_code in [200, 204]:
+
             print("📨 Discord message sent")
+
         else:
+
             print(f"⚠️ Discord HTTP {response.status_code}")
 
     except Exception as e:
