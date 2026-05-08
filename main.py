@@ -5,7 +5,7 @@ import datetime
 import requests
 import re
 
-print("🚀 UFC BetOnline Monitor started (DISCORD - FINAL v4 - FULL TEXT PARSER)")
+print("🚀 UFC BetOnline Monitor started (DISCORD - FINAL v5 - STRICT NAMES)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
@@ -17,9 +17,7 @@ if not DISCORD_WEBHOOK_URL:
     print("❌ Missing DISCORD_WEBHOOK_URL!")
     raise ValueError("Missing DISCORD_WEBHOOK_URL")
 
-headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
-}
+headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
 def scrape_ufc_moneyline():
     print(f"🌐 Scraping at {datetime.datetime.now().strftime('%H:%M:%S')}")
@@ -32,16 +30,14 @@ def scrape_ufc_moneyline():
         return []
 
     full_text = r.text
-
     print(f"📊 'UFC' in page? → {'UFC' in full_text.upper()}")
-    print(f"📊 Found {len(re.findall(r'([+-]\d{2,4})', full_text))} potential odds in full text")
+    print(f"📊 Found {len(re.findall(r'([+-]\\d{2,4})', full_text))} potential odds")
 
-    # Broad search for fights: look for 2 fighter names near 2 odds
     fights = []
     odds_pattern = re.compile(r'([+-]\d{2,4})')
-    name_pattern = re.compile(r'([A-Z][A-Za-z\s\.\'-]{5,40})')
+    # STRICT name pattern: two capitalized words with a space, no dots, no JS garbage
+    name_pattern = re.compile(r'([A-Z][A-Za-z\']{3,25}\s[A-Z][A-Za-z\']{3,25})')
 
-    # Split into lines/blocks and search
     for line in full_text.splitlines():
         if "UFC" not in line.upper():
             continue
@@ -62,9 +58,10 @@ def scrape_ufc_moneyline():
             print(f"✅ Found fight: {fight_key} | {odds[0]} vs {odds[1]}")
 
     print(f"✅ Scraped {len(fights)} potential UFC fights")
+
     if len(fights) == 0:
-        print("🔍 DEBUG: Still 0 fights - dumping first 800 chars of page for diagnosis:")
-        print(repr(full_text[:800]))
+        print("🔍 DEBUG: Still 0 fights - dumping first 600 chars of page:")
+        print(repr(full_text[:600]))
 
     return fights
 
