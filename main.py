@@ -7,7 +7,7 @@ import re
 from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
 
-print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v13 - SMARTER MONEYLINE PAIRING)")
+print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v14 - IMPROVED MONEYLINE PAIRING)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
@@ -42,7 +42,7 @@ def scrape_ufc_moneyline():
         odds_pattern = re.compile(r'([+-]\d{2,4})')
         name_pattern = re.compile(r'([A-Z][A-Za-z\']{4,40}\s[A-Z][A-Za-z\']{4,40})')
 
-        # Smarter pairing: split on "Moneyline" and take the immediate next names + odds
+        # v14 change: split on "Moneyline" and pair the next two names with the next two odds
         for block in re.split(r'Moneyline', full_text):
             if "UFC" not in block.upper():
                 continue
@@ -50,7 +50,6 @@ def scrape_ufc_moneyline():
             names = name_pattern.findall(block)
             odds = odds_pattern.findall(block)
 
-            # Pair the first two names with the first two odds in this block
             if len(names) >= 2 and len(odds) >= 2:
                 fighter1 = names[0].strip()
                 fighter2 = names[1].strip()
