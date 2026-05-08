@@ -6,7 +6,7 @@ import requests
 from bs4 import BeautifulSoup
 import re
 
-print("🚀 UFC BetOnline Monitor started (STABLE v16 - GLOBAL UFC SEARCH)")
+print("🚀 UFC BetOnline Monitor started (STABLE v17 - STRICT NAME + ODDS FILTER)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
@@ -20,7 +20,17 @@ if not DISCORD_WEBHOOK_URL:
 
 headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
-GARBAGE = {"betonline", "vip", "rewards", "crypto", "tutorial", "privacy", "policy", "wrapper", "jds", "js", "betslip", "feature_", "webappconfig", "chashout", "new_relic", "sas_rollout", "kameleoon", "diffusion", "bff_", "key_cloak", "newrelic", "gtm", "intercom", "xtremepush", "strapi", "cashoutapi", "edgetier", "surveymonkey", "widget"}
+GARBAGE = {
+    "betonline", "vip", "rewards", "crypto", "tutorial", "privacy", "policy", "wrapper",
+    "jds", "js", "betslip", "feature_", "webappconfig", "chashout", "new_relic",
+    "sas_rollout", "kameleoon", "diffusion", "bff_", "key_cloak", "newrelic",
+    "gtm", "intercom", "xtremepush", "strapi", "cashoutapi", "edgetier",
+    "surveymonkey", "widget", "cash", "drop", "enter", "code", "promo", "bonus", "reward"
+}
+
+# Much stricter name pattern - real fighter names only
+name_pattern = re.compile(r'([A-Z][A-Za-z\']{4,30}\s[A-Z][A-Za-z\']{4,30})')
+odds_pattern = re.compile(r'([+-]\d{3,4})')   # only realistic odds (-105 and above in magnitude)
 
 def scrape_ufc_moneyline():
     print(f"🌐 Scraping at {datetime.datetime.now().strftime('%H:%M:%S')}")
@@ -34,21 +44,23 @@ def scrape_ufc_moneyline():
 
     full_text = r.text
     fights = []
-    odds_pattern = re.compile(r'([+-]\d{2,4})')
-    name_pattern = re.compile(r'([A-Z][A-Za-z\']{3,30}\s[A-Z][A-Za-z\']{3,30})')
-
     ufclines = 0
+
     for line in full_text.splitlines():
         if "UFC" in line.upper() or "MMA" in line.upper():
             ufclines += 1
             odds = odds_pattern.findall(line)
             names = name_pattern.findall(line)
+
             if len(odds) >= 2 and len(names) >= 2:
                 fighter1 = names[0].strip()
                 fighter2 = names[1].strip()
                 fight_key = f"{fighter1} vs {fighter2}"
+
+                # Final garbage check
                 if any(g in fight_key.lower() for g in GARBAGE):
                     continue
+
                 fights.append({
                     "fight": fight_key,
                     "fighter1": fighter1,
@@ -62,13 +74,13 @@ def scrape_ufc_moneyline():
     print(f"📊 Found {ufclines} lines containing UFC/MMA")
     print(f"✅ Scraped {len(fights)} potential fights")
 
-    if len(fights) == 0 and ufclines == 0:
-        print("🔍 DEBUG: No UFC lines at all - dumping first 20,000 chars:")
+    if len(fights) == 0:
+        print("🔍 Still 0 real fights - dumping first 20,000 chars for diagnosis:")
         print(repr(full_text[:20000]))
 
     return fights
 
-# ====================== REST OF CODE (same as v15) ======================
+# ====================== REST OF CODE (unchanged) ======================
 def load_history():
     try:
         with open(DATA_FILE, "r") as f:
