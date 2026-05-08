@@ -1,85 +1,10 @@
-# ================================= UFC BETONLINE MONITOR (PLAYWRIGHT v19 - WORKING UFC PARSER) =================================
-
-import os
-import time
-import json
-import datetime
-import requests
-import re
-
-from playwright.sync_api import sync_playwright
-from bs4 import BeautifulSoup
-
-print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v19 - WORKING UFC PARSER)")
-
-# ================================= CONFIG =================================
-
-DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
-
-URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
-
-DATA_FILE = "/tmp/ufc_odds_history.json"
-
-POLL_INTERVAL_SECONDS = 90
-
-MIN_MOVEMENT_POINTS = 10
-
-# ================================= VALIDATION =================================
-
-if not DISCORD_WEBHOOK_URL:
-    print("❌ Missing DISCORD_WEBHOOK_URL!")
-    raise ValueError("Missing DISCORD_WEBHOOK_URL")
-
-# ================================= GARBAGE FILTER =================================
-
-GARBAGE = {
-    "betonline",
-    "sportsbook",
-    "betting world",
-    "vip",
-    "rewards",
-    "crypto",
-    "tutorial",
-    "privacy",
-    "policy",
-    "wrapper",
-    "jds",
-    "js",
-    "betslip",
-    "feature_",
-    "webappconfig",
-    "cashoutapi",
-    "new_relic",
-    "newrelic",
-    "gtm",
-    "intercom",
-    "widget",
-    "promo",
-    "bonus",
-    "reward"
-}
-
-# ================================= HELPERS =================================
-
-def parse_american_odds(odds_str):
-
-    if not odds_str:
-        return None
-
-    cleaned = str(odds_str).strip()
-
-    if cleaned.startswith(("+", "-")) and cleaned[1:].isdigit():
-        return int(cleaned)
-
-    return None
-
-# ================================= SCRAPER =================================
-
 def scrape_ufc_moneyline():
 
     print(f"\n🌐 Scraping at {datetime.datetime.now().strftime('%H:%M:%S')}")
 
     fights = []
+
+    captured_json = []
 
     try:
 
@@ -92,98 +17,116 @@ def scrape_ufc_moneyline():
 
             page = browser.new_page()
 
+            # ================================= RESPONSE INTERCEPT =================================
+
+            def handle_response(response):
+
+                url = response.url.lower()
+
+                if "offer-by-league" in url:
+
+                    print(f"🎯 Captured endpoint: {response.url}")
+
+                    try:
+
+                        data = response.json()
+
+                        captured_json.append(data)
+
+                    except Exception as e:
+
+                        print("❌ JSON parse failed:", e)
+
+            page.on("response", handle_response)
+
             print("🌍 Navigating to BetOnline...")
 
             page.goto(
                 URL,
-                wait_until="domcontentloaded",
+                wait_until="networkidle",
                 timeout=60000
             )
 
-            # allow sportsbook hydration
-            page.wait_for_timeout(5000)
-
-            # trigger lazy loading
-            page.mouse.wheel(0, 8000)
-
-            page.wait_for_timeout(3000)
-
-            content = page.content()
+            page.wait_for_timeout(8000)
 
             browser.close()
 
-        soup = BeautifulSoup(content, "html.parser")
-
-        full_text = soup.get_text(separator=" ", strip=True)
-
-        print(f"📄 Page text length: {len(full_text)}")
-
-        # ================================= UFC SECTION EXTRACTION =================================
-
-        ufc_sections = re.findall(
-            r'MMA\s*-\s*UFC.*?(?=MMA\s*-|$)',
-            full_text,
-            re.DOTALL | re.IGNORECASE
-        )
-
-        print(f"🔍 UFC sections found: {len(ufc_sections)}")
+        print(f"📦 Captured JSON payloads: {len(captured_json)}")
 
         seen = set()
 
-        for section in ufc_sections:
+        # ================================= MMA FILTER =================================
 
-            # ================================= MAIN PARSER =================================
+        MMA_KEYWORDS = [
+            "ufc",
+            "mma",
+            "martial arts",
+            "rizin",
+            "bellator",
+            "pfl",
+            "one championship",
+            "cage warriors",
+            "dwcs"
+        ]
+
+        for payload in captured_json:
+
+            payload_text = json.dumps(payload).lower()
+
+            # SKIP non-MMA payloads entirely
+            if not any(k in payload_text for k in MMA_KEYWORDS):
+                continue
+
+            print("🥋 MMA payload detected")
+
+            # ================================= REGEX EXTRACTION =================================
+
             #
             # Matches:
             #
-            # 24133 - Marco Tulio
-            # 24134 - Roman Kopylov
-            # Moneyline
-            # Marco Tulio -183
-            # Roman Kopylov +158
+            # Marco Tulio -183 Roman Kopylov +158
             #
-            # =================================
+            # Sean Strickland +420 Khamzat Chimaev -550
+            #
 
-            entries = re.findall(
-                r'([A-Za-zÀ-ÿ\-\'. ]+?)\s+([+-]\d+)',
-                section
+            matches = re.findall(
+                r'([A-Z][A-Za-zÀ-ÿ\-\'. ]{2,40})\s+([+-]\d+)\s+'
+                r'([A-Z][A-Za-zÀ-ÿ\-\'. ]{2,40})\s+([+-]\d+)',
+                payload_text,
+                re.IGNORECASE
             )
 
-            cleaned = []
+            print(f"📊 Regex matches: {len(matches)}")
 
-            for name, odds in entries:
+            for match in matches:
 
-                name = " ".join(name.split()).strip()
+                fighter1 = " ".join(match[0].split()).title().strip()
+                odds1 = match[1].strip()
 
-                # basic sanity filters
-                if len(name) < 4:
-                    continue
+                fighter2 = " ".join(match[2].split()).title().strip()
+                odds2 = match[3].strip()
 
-                if any(g in name.lower() for g in GARBAGE):
-                    continue
-
-                # skip market labels
-                if name.lower() in [
+                # reject obvious non-fights
+                banned = [
                     "moneyline",
                     "spread",
                     "total",
                     "over",
-                    "under"
-                ]:
+                    "under",
+                    "tie"
+                ]
+
+                if any(b in fighter1.lower() for b in banned):
                     continue
 
-                cleaned.append((name, odds))
+                if any(b in fighter2.lower() for b in banned):
+                    continue
 
-            print(f"📊 Parsed entries: {len(cleaned)}")
+                # sanity
+                if len(fighter1.split()) < 2:
+                    continue
 
-            # pair fighters sequentially
-            for i in range(0, len(cleaned) - 1, 2):
-
-                fighter1, odds1 = cleaned[i]
-                fighter2, odds2 = cleaned[i + 1]
-
-                # skip weird duplicates
-                if fighter1 == fighter2:
+                if len(fighter2.split()) < 2:
                     continue
 
                 fight_key = f"{fighter1} vs {fighter2}"
@@ -202,7 +145,10 @@ def scrape_ufc_moneyline():
                     "timestamp": datetime.datetime.now().isoformat()
                 })
 
-                print(f"✅ Found fight: {fight_key} | {odds1} vs {odds2}")
+                print(
+                    f"✅ Found fight: "
+                    f"{fight_key} | {odds1} vs {odds2}"
+                )
 
         print(f"\n✅ FINAL UFC FIGHTS SCRAPED: {len(fights)}")
 
@@ -210,9 +156,18 @@ def scrape_ufc_moneyline():
 
         if len(fights) == 0:
 
-            print("\n🔍 DEBUG DUMP (first 5000 chars):\n")
+            print("\n⚠️ NO UFC FIGHTS FOUND")
 
-            print(repr(full_text[:5000]))
+            if captured_json:
+
+                try:
+
+                    sample = json.dumps(captured_json[0], indent=2)
+
+                    print(sample[:5000])
+
+                except:
+                    pass
 
         return fights
 
@@ -221,144 +176,3 @@ def scrape_ufc_moneyline():
         print(f"❌ Playwright error: {e}")
 
         return []
-
-# ================================= HISTORY =================================
-
-def load_history():
-
-    try:
-
-        with open(DATA_FILE, "r") as f:
-
-            return json.load(f)
-
-    except:
-
-        return {}
-
-def save_history(current_fights):
-
-    with open(DATA_FILE, "w") as f:
-
-        json.dump(
-            {f["fight"]: f for f in current_fights},
-            f,
-            indent=2
-        )
-
-# ================================= MOVEMENT DETECTION =================================
-
-def detect_movements(old_data, new_fights):
-
-    messages = []
-
-    for fight in new_fights:
-
-        key = fight["fight"]
-
-        if key not in old_data:
-            continue
-
-        old = old_data[key]
-
-        for fk in ["fighter1", "fighter2"]:
-
-            old_odds = old.get(f"{fk}_odds")
-            new_odds = fight.get(f"{fk}_odds")
-
-            if old_odds == new_odds:
-                continue
-
-            old_val = parse_american_odds(old_odds)
-            new_val = parse_american_odds(new_odds)
-
-            if old_val is None or new_val is None:
-                continue
-
-            diff = abs(new_val - old_val)
-
-            if diff < MIN_MOVEMENT_POINTS:
-                continue
-
-            direction = "↑" if new_val > old_val else "↓"
-
-            msg = (
-                f"🔄 **{key}**\n"
-                f"{fight[fk]} odds moved: "
-                f"{old_odds} → **{new_odds}** "
-                f"({direction}{diff} pts)"
-            )
-
-            messages.append({
-                "text": msg,
-                "movement": diff
-            })
-
-    # biggest movement first
-    messages.sort(
-        key=lambda x: x["movement"],
-        reverse=True
-    )
-
-    return messages
-
-# ================================= DISCORD =================================
-
-def send_discord(message):
-
-    payload = {
-        "content": message
-    }
-
-    try:
-
-        response = requests.post(
-            DISCORD_WEBHOOK_URL,
-            json=payload,
-            timeout=10
-        )
-
-        if response.status_code in [200, 204]:
-
-            print("📨 Discord message sent")
-
-        else:
-
-            print(f"⚠️ Discord HTTP {response.status_code}")
-
-    except Exception as e:
-
-        print("❌ Discord error:", e)
-
-# ================================= MAIN LOOP =================================
-
-if __name__ == "__main__":
-
-    while True:
-
-        current_fights = scrape_ufc_moneyline()
-
-        if current_fights:
-
-            old_data = load_history()
-
-            movements = detect_movements(
-                old_data,
-                current_fights
-            )
-
-            for movement in movements:
-
-                print("\n" + movement["text"])
-
-                send_discord(movement["text"])
-
-            save_history(current_fights)
-
-        else:
-
-            print("⚠️ No fights found this cycle")
-
-        print(f"\n⏳ Sleeping {POLL_INTERVAL_SECONDS} seconds...\n")
-
-        time.sleep(POLL_INTERVAL_SECONDS)
