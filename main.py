@@ -6,7 +6,7 @@ import requests
 import re
 from playwright.sync_api import sync_playwright
 
-print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v23 - OFFERING-BY-LEAGUE + BUDDY'S PARSER)")
+print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v24 - FULL GAME STRUCTURE DEBUG)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
@@ -32,31 +32,42 @@ def scrape_ufc_moneyline():
                     print(f"🔥 FOUND OFFERING-BY-LEAGUE → {response.url}")
                     try:
                         data = response.json()
-                        print(f"   📊 Top-level keys: {list(data.keys()) if isinstance(data, dict) else 'not a dict'}")
-
-                        # === BUDDY'S EXACT STRUCTURE ===
                         game_offering = data.get("GameOffering", {}) or data.get("data", {}).get("GameOffering", {})
                         games = game_offering.get("GamesDescription", [])
 
                         print(f"   📌 Found {len(games)} games in GameOffering")
 
+                        # === DEBUG: Show structure of first 3 games ===
+                        for i, game in enumerate(games[:3]):
+                            print(f"   📋 Game {i} keys: {list(game.keys())}")
+                            print(f"   📋 Sample game {i}: {repr(game)[:800]}...")  # first 800 chars
+
+                        # === Try multiple possible key paths ===
                         for game in games:
-                            fighter1 = game.get("AwayTeam", "Unknown")
-                            fighter2 = game.get("HomeTeam", "Unknown")
-                            fight_key = f"{fighter1} vs {fighter2}"
+                            # Fighter names - try several possible keys
+                            f1 = (game.get("AwayTeam") or game.get("Participant1") or 
+                                  game.get("Team1") or game.get("Away") or "Unknown")
+                            f2 = (game.get("HomeTeam") or game.get("Participant2") or 
+                                  game.get("Team2") or game.get("Home") or "Unknown")
 
-                            # Odds
-                            away_line = game.get("AwayLine", {}) or {}
-                            home_line = game.get("HomeLine", {}) or {}
-                            odds1 = away_line.get("MoneyLine", {}).get("Line") or "N/A"
-                            odds2 = home_line.get("MoneyLine", {}).get("Line") or "N/A"
+                            fight_key = f"{f1} vs {f2}"
 
-                            if fighter1 != "Unknown" and fighter2 != "Unknown":
+                            # Odds - try several nesting levels
+                            away_line = game.get("AwayLine") or game.get("AwayTeamLine") or {}
+                            home_line = game.get("HomeLine") or game.get("HomeTeamLine") or {}
+                            odds1 = (away_line.get("MoneyLine", {}).get("Line") or 
+                                     away_line.get("MoneyLine") or 
+                                     away_line.get("Line") or "N/A")
+                            odds2 = (home_line.get("MoneyLine", {}).get("Line") or 
+                                     home_line.get("MoneyLine") or 
+                                     home_line.get("Line") or "N/A")
+
+                            if f1 != "Unknown" and f2 != "Unknown" and odds1 != "N/A" and odds2 != "N/A":
                                 fights.append({
                                     "fight": fight_key,
-                                    "fighter1": fighter1,
+                                    "fighter1": f1,
                                     "fighter1_odds": str(odds1),
-                                    "fighter2": fighter2,
+                                    "fighter2": f2,
                                     "fighter2_odds": str(odds2),
                                     "timestamp": datetime.datetime.now().isoformat()
                                 })
@@ -77,7 +88,7 @@ def scrape_ufc_moneyline():
         print(f"✅ Scraped {len(fights)} potential fights")
 
         if len(fights) == 0:
-            print("🔍 Check the 🔥 FOUND OFFERING-BY-LEAGUE lines above — we need to see the JSON structure.")
+            print("🔍 Check the 📋 Game keys and sample above — we'll fix the keys in the next version.")
 
         return fights
 
