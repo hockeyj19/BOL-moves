@@ -6,7 +6,7 @@ import requests
 import re
 from playwright.sync_api import sync_playwright
 
-print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v31 - HEAVY DEBUG)")
+print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v32 - FIXED EXTRACTION FROM DEBUG)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
@@ -36,25 +36,29 @@ def scrape_ufc_moneyline():
 
                         print(f"   📌 Found {len(games)} games in GameOffering")
 
-                        # === HEAVY DEBUG - print first 3 games fully ===
-                        for i, game in enumerate(games[:3]):
+                        # Debug first 2 games (keep this for now)
+                        for i, game in enumerate(games[:2]):
                             print(f"\n   📋 === GAME {i} FULL KEYS ===")
                             print(list(game.keys()))
                             print(f"   📋 AwayTeam: {game.get('AwayTeam')}")
                             print(f"   📋 HomeTeam: {game.get('HomeTeam')}")
                             print(f"   📋 AwayLine: {game.get('AwayLine')}")
                             print(f"   📋 HomeLine: {game.get('HomeLine')}")
-                            print(f"   📋 Raw game (first 600 chars): {repr(game)[:600]}...\n")
 
-                        # === Current extraction logic ===
+                        # FIXED EXTRACTION based on your debug logs
                         for game in games:
-                            f1 = (game.get("AwayTeam") or game.get("Participant1") or game.get("Team1") or game.get("Away") or "Unknown")
-                            f2 = (game.get("HomeTeam") or game.get("Participant2") or game.get("Team2") or game.get("Home") or "Unknown")
+                            # Try nested 'Game' key first (most common)
+                            inner_game = game.get("Game", game)  # fallback to top level
+
+                            f1 = (inner_game.get("AwayTeam") or inner_game.get("Participant1") or 
+                                  inner_game.get("Team1") or inner_game.get("Away") or "Unknown")
+                            f2 = (inner_game.get("HomeTeam") or inner_game.get("Participant2") or 
+                                  inner_game.get("Team2") or inner_game.get("Home") or "Unknown")
 
                             fight_key = f"{f1} vs {f2}"
 
-                            away_line = game.get("AwayLine") or game.get("AwayTeamLine") or {}
-                            home_line = game.get("HomeLine") or game.get("HomeTeamLine") or {}
+                            away_line = inner_game.get("AwayLine") or inner_game.get("AwayTeamLine") or {}
+                            home_line = inner_game.get("HomeLine") or inner_game.get("HomeTeamLine") or {}
 
                             odds1 = (away_line.get("MoneyLine", {}).get("Line") or 
                                      away_line.get("MoneyLine") or 
