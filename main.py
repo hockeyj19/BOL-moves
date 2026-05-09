@@ -6,7 +6,7 @@ import requests
 import re
 from playwright.sync_api import sync_playwright
 
-print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v30 - FIXED UFC ONLY)")
+print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v31 - HEAVY DEBUG)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
@@ -28,6 +28,7 @@ def scrape_ufc_moneyline():
 
             def handle_response(response):
                 if "offering-by-league" in response.url.lower():
+                    print(f"🔥 FOUND OFFERING-BY-LEAGUE → {response.url}")
                     try:
                         data = response.json()
                         game_offering = data.get("GameOffering", {}) or data.get("data", {}).get("GameOffering", {})
@@ -35,15 +36,22 @@ def scrape_ufc_moneyline():
 
                         print(f"   📌 Found {len(games)} games in GameOffering")
 
+                        # === HEAVY DEBUG - print first 3 games fully ===
+                        for i, game in enumerate(games[:3]):
+                            print(f"\n   📋 === GAME {i} FULL KEYS ===")
+                            print(list(game.keys()))
+                            print(f"   📋 AwayTeam: {game.get('AwayTeam')}")
+                            print(f"   📋 HomeTeam: {game.get('HomeTeam')}")
+                            print(f"   📋 AwayLine: {game.get('AwayLine')}")
+                            print(f"   📋 HomeLine: {game.get('HomeLine')}")
+                            print(f"   📋 Raw game (first 600 chars): {repr(game)[:600]}...\n")
+
+                        # === Current extraction logic ===
                         for game in games:
                             f1 = (game.get("AwayTeam") or game.get("Participant1") or game.get("Team1") or game.get("Away") or "Unknown")
                             f2 = (game.get("HomeTeam") or game.get("Participant2") or game.get("Team2") or game.get("Home") or "Unknown")
 
                             fight_key = f"{f1} vs {f2}"
-
-                            # FIXED UFC-ONLY FILTER: check the entire game object (this works)
-                            if "UFC" not in str(game).upper():
-                                continue
 
                             away_line = game.get("AwayLine") or game.get("AwayTeamLine") or {}
                             home_line = game.get("HomeLine") or game.get("HomeTeamLine") or {}
