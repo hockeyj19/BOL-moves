@@ -6,7 +6,7 @@ import requests
 import re
 from playwright.sync_api import sync_playwright
 
-print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v35 - HEAVY UFC LOCATION DEBUG)")
+print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v36 - FIND WHERE UFC IS STORED)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
@@ -36,14 +36,19 @@ def scrape_ufc_moneyline():
 
                         print(f"   📌 Found {len(games)} games in GameOffering")
 
-                        for i, game in enumerate(games[:5]):  # debug first 5 games
-                            game_str = str(game).upper()
-                            if "UFC" in game_str:
-                                print(f"   🔥 UFC FOUND in Game {i}!")
-                                # Try to find which key contains it
-                                for key, value in game.items():
-                                    if "UFC" in str(value).upper():
-                                        print(f"      → Key '{key}' contains 'UFC': {value}")
+                        # === SEARCH ENTIRE RESPONSE FOR "UFC" ===
+                        full_text = str(data).upper()
+                        if "UFC" in full_text:
+                            print("   🔥 'UFC' FOUND somewhere in the JSON!")
+                            # Try to find which top-level key contains it
+                            for key, value in data.items():
+                                if "UFC" in str(value).upper():
+                                    print(f"      → Top-level key '{key}' contains 'UFC'")
+                            for key, value in game_offering.items():
+                                if "UFC" in str(value).upper():
+                                    print(f"      → game_offering key '{key}' contains 'UFC'")
+                        else:
+                            print("   ❌ 'UFC' NOT FOUND anywhere in the JSON")
 
                         # Current extraction (no filter yet)
                         for game in games:
