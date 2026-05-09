@@ -6,7 +6,7 @@ import requests
 import re
 from playwright.sync_api import sync_playwright
 
-print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v28 - SMART UFC ONLY)")
+print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v29 - FIXED UFC ONLY)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
@@ -33,7 +33,11 @@ def scrape_ufc_moneyline():
                         game_offering = data.get("GameOffering", {}) or data.get("data", {}).get("GameOffering", {})
                         games = game_offering.get("GamesDescription", [])
 
-                        print(f"   📌 Found {len(games)} games in GameOffering")
+                        # FIXED UFC FILTER: check the whole response for "UFC"
+                        full_json_text = str(data).upper()
+                        is_ufc_card = "UFC" in full_json_text
+
+                        print(f"   📌 Found {len(games)} games | UFC card detected: {is_ufc_card}")
 
                         for game in games:
                             f1 = (game.get("AwayTeam") or game.get("Participant1") or game.get("Team1") or game.get("Away") or "Unknown")
@@ -41,10 +45,8 @@ def scrape_ufc_moneyline():
 
                             fight_key = f"{f1} vs {f2}"
 
-                            # SMART UFC-ONLY FILTER - checks the entire game object
-                            game_text = str(game).upper()
-                            if "UFC" not in game_text:
-                                continue
+                            if not is_ufc_card:
+                                continue  # skip if it's not a UFC card
 
                             away_line = game.get("AwayLine") or game.get("AwayTeamLine") or {}
                             home_line = game.get("HomeLine") or game.get("HomeTeamLine") or {}
@@ -67,8 +69,8 @@ def scrape_ufc_moneyline():
                                 })
                                 print(f"✅ Found fight: {fight_key} | {odds1} vs {odds2}")
 
-                    except:
-                        pass
+                    except Exception as e:
+                        print(f"   JSON parse error: {e}")
 
             page.on("response", handle_response)
 
