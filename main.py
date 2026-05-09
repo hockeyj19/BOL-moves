@@ -6,7 +6,7 @@ import requests
 import re
 from playwright.sync_api import sync_playwright
 
-print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v33 - FIXED NESTED GAME STRUCTURE)")
+print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v34 - UFC ONLY)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
@@ -28,7 +28,6 @@ def scrape_ufc_moneyline():
 
             def handle_response(response):
                 if "offering-by-league" in response.url.lower():
-                    print(f"🔥 FOUND OFFERING-BY-LEAGUE → {response.url}")
                     try:
                         data = response.json()
                         game_offering = data.get("GameOffering", {}) or data.get("data", {}).get("GameOffering", {})
@@ -37,16 +36,17 @@ def scrape_ufc_moneyline():
                         print(f"   📌 Found {len(games)} games in GameOffering")
 
                         for game in games:
-                            # FIXED: Go one level deeper into the "Game" key
-                            inner = game.get("Game", game)
-
-                            f1 = (inner.get("AwayTeam") or inner.get("Participant1") or inner.get("Team1") or inner.get("Away") or "Unknown")
-                            f2 = (inner.get("HomeTeam") or inner.get("Participant2") or inner.get("Team2") or inner.get("Home") or "Unknown")
+                            f1 = (game.get("AwayTeam") or game.get("Participant1") or game.get("Team1") or game.get("Away") or "Unknown")
+                            f2 = (game.get("HomeTeam") or game.get("Participant2") or game.get("Team2") or game.get("Home") or "Unknown")
 
                             fight_key = f"{f1} vs {f2}"
 
-                            away_line = inner.get("AwayLine") or inner.get("AwayTeamLine") or {}
-                            home_line = inner.get("HomeLine") or inner.get("HomeTeamLine") or {}
+                            # UFC-ONLY FILTER (checks entire game object - more tolerant)
+                            if "UFC" not in str(game).upper():
+                                continue
+
+                            away_line = game.get("AwayLine") or game.get("AwayTeamLine") or {}
+                            home_line = game.get("HomeLine") or game.get("HomeTeamLine") or {}
 
                             odds1 = (away_line.get("MoneyLine", {}).get("Line") or 
                                      away_line.get("MoneyLine") or 
