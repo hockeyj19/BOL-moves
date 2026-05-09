@@ -6,7 +6,7 @@ import requests
 import re
 from playwright.sync_api import sync_playwright
 
-print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v32 - STABLE WORKING VERSION)")
+print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v24 - FULL GAME STRUCTURE DEBUG)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
@@ -27,23 +27,32 @@ def scrape_ufc_moneyline():
             page = browser.new_page()
 
             def handle_response(response):
-                if "offering-by-league" in response.url.lower():
+                url = response.url.lower()
+                if "offering-by-league" in url:
+                    print(f"🔥 FOUND OFFERING-BY-LEAGUE → {response.url}")
                     try:
                         data = response.json()
                         game_offering = data.get("GameOffering", {}) or data.get("data", {}).get("GameOffering", {})
                         games = game_offering.get("GamesDescription", [])
 
+                        print(f"   📌 Found {len(games)} games in GameOffering")
+
+                        # === DEBUG: Show structure of first 3 games ===
+                        for i, game in enumerate(games[:3]):
+                            print(f"   📋 Game {i} keys: {list(game.keys())}")
+                            print(f"   📋 Sample game {i}: {repr(game)[:800]}...")  
+
+                        # === Try multiple possible key paths ===
                         for game in games:
-                            f1 = (game.get("AwayTeam") or game.get("Participant1") or game.get("Team1") or game.get("Away") or "Unknown")
-                            f2 = (game.get("HomeTeam") or game.get("Participant2") or game.get("Team2") or game.get("Home") or "Unknown")
+                            f1 = (game.get("AwayTeam") or game.get("Participant1") or 
+                                  game.get("Team1") or game.get("Away") or "Unknown")
+                            f2 = (game.get("HomeTeam") or game.get("Participant2") or 
+                                  game.get("Team2") or game.get("Home") or "Unknown")
 
                             fight_key = f"{f1} vs {f2}"
 
-                            # NO FILTER - this is the version that worked
-
                             away_line = game.get("AwayLine") or game.get("AwayTeamLine") or {}
                             home_line = game.get("HomeLine") or game.get("HomeTeamLine") or {}
-
                             odds1 = (away_line.get("MoneyLine", {}).get("Line") or 
                                      away_line.get("MoneyLine") or 
                                      away_line.get("Line") or "N/A")
@@ -67,8 +76,11 @@ def scrape_ufc_moneyline():
 
             page.on("response", handle_response)
 
+            print("🌍 Navigating to BetOnline...")
             page.goto(URL, wait_until="load", timeout=60000)
+            print("⏳ Waiting for offering-by-league JSON...")
             page.wait_for_timeout(20000)
+
             browser.close()
 
         print(f"✅ Scraped {len(fights)} potential fights")
