@@ -6,7 +6,7 @@ import requests
 import re
 from playwright.sync_api import sync_playwright
 
-print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v37 - CLEAN UFC ONLY)")
+print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v38 - TARGETED UFC FILTER)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
@@ -33,14 +33,18 @@ def scrape_ufc_moneyline():
                         game_offering = data.get("GameOffering", {}) or data.get("data", {}).get("GameOffering", {})
                         games = game_offering.get("GamesDescription", [])
 
-                        # CLEAN UFC-ONLY FILTER: check top-level JSON once
-                        full_json = str(data).upper()
-                        is_ufc_event = "UFC" in full_json
+                        print(f"   📌 Found {len(games)} games in GameOffering")
 
-                        print(f"   📌 Found {len(games)} games | UFC event detected: {is_ufc_event}")
+                        # TARGETED UFC FILTER - only check GameOffering and GamesDescription
+                        game_offering_text = str(game_offering).upper()
+                        games_description_text = str(games).upper()
+                        is_ufc_event = "UFC" in game_offering_text or "UFC" in games_description_text
+
+                        print(f"   🔥 UFC event detected: {is_ufc_event}")
 
                         if not is_ufc_event:
-                            return  # skip everything if not a UFC card
+                            print("   → Not a UFC event, skipping all fights")
+                            return
 
                         for game in games:
                             f1 = (game.get("AwayTeam") or game.get("Participant1") or game.get("Team1") or game.get("Away") or "Unknown")
