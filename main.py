@@ -6,7 +6,7 @@ import requests
 import re
 from playwright.sync_api import sync_playwright
 
-print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v36 - FIND WHERE UFC IS STORED)")
+print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v37 - CLEAN UFC ONLY)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
@@ -28,29 +28,20 @@ def scrape_ufc_moneyline():
 
             def handle_response(response):
                 if "offering-by-league" in response.url.lower():
-                    print(f"🔥 FOUND OFFERING-BY-LEAGUE → {response.url}")
                     try:
                         data = response.json()
                         game_offering = data.get("GameOffering", {}) or data.get("data", {}).get("GameOffering", {})
                         games = game_offering.get("GamesDescription", [])
 
-                        print(f"   📌 Found {len(games)} games in GameOffering")
+                        # CLEAN UFC-ONLY FILTER: check top-level JSON once
+                        full_json = str(data).upper()
+                        is_ufc_event = "UFC" in full_json
 
-                        # === SEARCH ENTIRE RESPONSE FOR "UFC" ===
-                        full_text = str(data).upper()
-                        if "UFC" in full_text:
-                            print("   🔥 'UFC' FOUND somewhere in the JSON!")
-                            # Try to find which top-level key contains it
-                            for key, value in data.items():
-                                if "UFC" in str(value).upper():
-                                    print(f"      → Top-level key '{key}' contains 'UFC'")
-                            for key, value in game_offering.items():
-                                if "UFC" in str(value).upper():
-                                    print(f"      → game_offering key '{key}' contains 'UFC'")
-                        else:
-                            print("   ❌ 'UFC' NOT FOUND anywhere in the JSON")
+                        print(f"   📌 Found {len(games)} games | UFC event detected: {is_ufc_event}")
 
-                        # Current extraction (no filter yet)
+                        if not is_ufc_event:
+                            return  # skip everything if not a UFC card
+
                         for game in games:
                             f1 = (game.get("AwayTeam") or game.get("Participant1") or game.get("Team1") or game.get("Away") or "Unknown")
                             f2 = (game.get("HomeTeam") or game.get("Participant2") or game.get("Team2") or game.get("Home") or "Unknown")
