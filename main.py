@@ -6,7 +6,7 @@ import requests
 import re
 from playwright.sync_api import sync_playwright
 
-print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v39 - FIXED UFC FILTER)")
+print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v40 - FIXED NESTED EXTRACTION + UFC FILTER)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
@@ -35,7 +35,7 @@ def scrape_ufc_moneyline():
 
                         print(f"   📌 Found {len(games)} games in GameOffering")
 
-                        # Targeted UFC filter
+                        # Targeted UFC filter (exactly as you requested)
                         game_offering_text = str(game_offering).upper()
                         games_description_text = str(games).upper()
                         is_ufc_event = "UFC" in game_offering_text or "UFC" in games_description_text
@@ -46,14 +46,17 @@ def scrape_ufc_moneyline():
                             print("   → Not a UFC event, skipping")
                             return
 
+                        # FIXED EXTRACTION: go one level deeper into "Game"
                         for game in games:
-                            f1 = (game.get("AwayTeam") or game.get("Participant1") or game.get("Team1") or game.get("Away") or "Unknown")
-                            f2 = (game.get("HomeTeam") or game.get("Participant2") or game.get("Team2") or game.get("Home") or "Unknown")
+                            inner = game.get("Game", game)   # <--- this was the missing piece
+
+                            f1 = (inner.get("AwayTeam") or inner.get("Participant1") or inner.get("Team1") or inner.get("Away") or "Unknown")
+                            f2 = (inner.get("HomeTeam") or inner.get("Participant2") or inner.get("Team2") or inner.get("Home") or "Unknown")
 
                             fight_key = f"{f1} vs {f2}"
 
-                            away_line = game.get("AwayLine") or game.get("AwayTeamLine") or {}
-                            home_line = game.get("HomeLine") or game.get("HomeTeamLine") or {}
+                            away_line = inner.get("AwayLine") or inner.get("AwayTeamLine") or {}
+                            home_line = inner.get("HomeLine") or inner.get("HomeTeamLine") or {}
 
                             odds1 = (away_line.get("MoneyLine", {}).get("Line") or 
                                      away_line.get("MoneyLine") or 
