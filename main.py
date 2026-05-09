@@ -6,7 +6,7 @@ import requests
 import re
 from playwright.sync_api import sync_playwright
 
-print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v33 - FINAL UFC ONLY)")
+print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v32 - STABLE WORKING VERSION)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
@@ -39,9 +39,7 @@ def scrape_ufc_moneyline():
 
                             fight_key = f"{f1} vs {f2}"
 
-                            # UFC-ONLY FILTER (checks entire game object)
-                            if "UFC" not in str(game).upper():
-                                continue
+                            # NO FILTER - this is the version that worked
 
                             away_line = game.get("AwayLine") or game.get("AwayTeamLine") or {}
                             home_line = game.get("HomeLine") or game.get("HomeTeamLine") or {}
