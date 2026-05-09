@@ -6,7 +6,7 @@ import requests
 import re
 from playwright.sync_api import sync_playwright
 
-print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v29 - FIXED UFC ONLY)")
+print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v30 - FIXED UFC ONLY)")
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
@@ -33,11 +33,7 @@ def scrape_ufc_moneyline():
                         game_offering = data.get("GameOffering", {}) or data.get("data", {}).get("GameOffering", {})
                         games = game_offering.get("GamesDescription", [])
 
-                        # FIXED UFC FILTER: check the whole response for "UFC"
-                        full_json_text = str(data).upper()
-                        is_ufc_card = "UFC" in full_json_text
-
-                        print(f"   📌 Found {len(games)} games | UFC card detected: {is_ufc_card}")
+                        print(f"   📌 Found {len(games)} games in GameOffering")
 
                         for game in games:
                             f1 = (game.get("AwayTeam") or game.get("Participant1") or game.get("Team1") or game.get("Away") or "Unknown")
@@ -45,8 +41,9 @@ def scrape_ufc_moneyline():
 
                             fight_key = f"{f1} vs {f2}"
 
-                            if not is_ufc_card:
-                                continue  # skip if it's not a UFC card
+                            # FIXED UFC-ONLY FILTER: check the entire game object (this works)
+                            if "UFC" not in str(game).upper():
+                                continue
 
                             away_line = game.get("AwayLine") or game.get("AwayTeamLine") or {}
                             home_line = game.get("HomeLine") or game.get("HomeTeamLine") or {}
