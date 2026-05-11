@@ -5,7 +5,7 @@ import datetime
 import requests
 from playwright.sync_api import sync_playwright
 
-print("🚀 UFC BetOnline Monitor started (v42 - BUDDY PARSING + SCHEDULETEXT UFC FILTER)")
+print("🚀 UFC BetOnline Monitor started (v43 - FIXED INT ODDS + SCHEDULETEXT FILTER)")
 
 # ========================= CONFIG =========================
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
@@ -19,12 +19,16 @@ if not DISCORD_WEBHOOK_URL:
     print("❌ Missing DISCORD_WEBHOOK_URL environment variable!")
     raise ValueError("Missing DISCORD_WEBHOOK_URL")
 
-def parse_american_odds(odds_str):
-    if not odds_str or odds_str == "N/A":
+def parse_american_odds(odds):
+    """Handle both int (from JSON) and str odds safely"""
+    if odds is None or odds == "N/A":
         return None
-    cleaned = odds_str.strip()
-    if cleaned.startswith(('+', '-')) and cleaned[1:].isdigit():
-        return int(cleaned)
+    if isinstance(odds, (int, float)):
+        return int(odds)
+    if isinstance(odds, str):
+        cleaned = odds.strip()
+        if cleaned.startswith(('+', '-')) and cleaned[1:].isdigit():
+            return int(cleaned)
     return None
 
 def load_history():
@@ -88,19 +92,15 @@ def scrape_ufc_moneyline():
                         print(f"   📌 Found {len(games)} games in GameOffering")
 
                         for g in games:
-                            # Buddy's exact structure
-                            game = g.get("Game", g)  # nested "Game" key fallback
-                            
+                            game = g.get("Game", g)   # nested structure
                             schedule = game.get("ScheduleText", "New MMA Odds").strip()
-                            
-                            # === UFC ONLY FILTER USING SCHEDULETEXT ===
+
                             if "UFC" not in schedule.upper():
-                                continue  # Skip PFL, RIZIN, ACA, etc.
+                                continue
 
                             fighter1 = game.get("AwayTeam", "Unknown")
                             fighter2 = game.get("HomeTeam", "Unknown")
-                            
-                            # Odds extraction (buddy's path)
+
                             away_line = game.get("AwayLine", {}) or {}
                             home_line = game.get("HomeLine", {}) or {}
                             odds1 = (away_line.get("MoneyLine", {}).get("Line") or 
@@ -116,8 +116,8 @@ def scrape_ufc_moneyline():
                                 "key": fight_key,
                                 "fighter1": fighter1,
                                 "fighter2": fighter2,
-                                "fighter1_odds": odds1,
-                                "fighter2_odds": odds2,
+                                "fighter1_odds": str(odds1),   # store as string for consistency
+                                "fighter2_odds": str(odds2),
                                 "schedule": schedule
                             })
                             print(f"✅ Found UFC fight: {fight_key} | {odds1} vs {odds2} | {schedule}")
@@ -128,7 +128,7 @@ def scrape_ufc_moneyline():
 
             page.on("response", handle_response)
             page.goto(URL, wait_until="load", timeout=30000)
-            page.wait_for_timeout(15000)  # Wait for dynamic content
+            page.wait_for_timeout(15000)
             browser.close()
     except Exception as e:
         print(f"❌ Playwright error: {e}")
