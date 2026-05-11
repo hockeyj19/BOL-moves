@@ -5,7 +5,7 @@ import datetime
 import requests
 from playwright.sync_api import sync_playwright
 
-print("🚀 UFC BetOnline Monitor started (v44 - FIXED HISTORY DICT + SAFE ODDS)")
+print("🚀 UFC BetOnline Monitor started (v46 - YOUR EXACT DISCORD FORMAT)")
 
 # ========================= CONFIG =========================
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
@@ -37,7 +37,6 @@ def load_history():
         try:
             with open(DATA_FILE, "r") as f:
                 data = json.load(f)
-            # Migrate old list format to dict
             if isinstance(data, list):
                 print("🔄 Migrating old history list → dict format...")
                 return {fight.get("key"): fight for fight in data if isinstance(fight, dict) and "key" in fight}
@@ -59,7 +58,7 @@ def save_history(current_fights):
 def detect_movements(old_data, current_fights):
     messages = []
     for fight in current_fights:
-        key = fight["key"]
+        key = fight["key"]                    # full matchup
         old = old_data.get(key, {})
         for fk in ["fighter1", "fighter2"]:
             old_odds = old.get(f"{fk}_odds")
@@ -71,7 +70,8 @@ def detect_movements(old_data, current_fights):
                     diff = abs(new_val - old_val)
                     if diff >= MIN_MOVEMENT_POINTS:
                         direction = '↑' if new_val > old_val else '↓'
-                        msg = f"📈 **{key}** {old_odds} → **{new_odds}** ({direction}{diff} pts)\n{fight[fk]}"
+                        # YOUR EXACT REQUESTED FORMAT
+                        msg = f"📈 **{fight[fk]}** {old_odds} → **{new_odds}** ({direction}{diff} pts)\n{key}"
                         messages.append(msg)
     return messages
 
