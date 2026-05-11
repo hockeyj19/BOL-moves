@@ -71,7 +71,7 @@ def detect_movements(old_data, current_fights):
                     diff = abs(new_val - old_val)
                     if diff >= MIN_MOVEMENT_POINTS:
                         direction = '↑' if new_val > old_val else '↓'
-                        msg = f"🔄 **{key}**\n{fight[fk]} odds moved: {old_odds} → **{new_odds}** ({direction}{diff} pts)"
+                        msg = f"📈 **{key}** {old_odds} → **{new_odds}** ({direction}{diff} pts)\n{fight[fk]}"
                         messages.append(msg)
     return messages
 
