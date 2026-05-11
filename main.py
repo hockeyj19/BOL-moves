@@ -3,20 +3,72 @@ import time
 import json
 import datetime
 import requests
-import re
 from playwright.sync_api import sync_playwright
 
-print("🚀 UFC BetOnline Monitor started (PLAYWRIGHT v40 - FIXED NESTED EXTRACTION + UFC FILTER)")
+print("🚀 UFC BetOnline Monitor started (v42 - BUDDY PARSING + SCHEDULETEXT UFC FILTER)")
 
+# ========================= CONFIG =========================
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 URL = "https://www.betonline.ag/sportsbook/martial-arts/mma"
 DATA_FILE = "/tmp/ufc_odds_history.json"
 POLL_INTERVAL_SECONDS = 90
 MIN_MOVEMENT_POINTS = 10
+# ========================================================
 
 if not DISCORD_WEBHOOK_URL:
-    print("❌ Missing DISCORD_WEBHOOK_URL!")
+    print("❌ Missing DISCORD_WEBHOOK_URL environment variable!")
     raise ValueError("Missing DISCORD_WEBHOOK_URL")
+
+def parse_american_odds(odds_str):
+    if not odds_str or odds_str == "N/A":
+        return None
+    cleaned = odds_str.strip()
+    if cleaned.startswith(('+', '-')) and cleaned[1:].isdigit():
+        return int(cleaned)
+    return None
+
+def load_history():
+    if os.path.exists(DATA_FILE):
+        try:
+            with open(DATA_FILE, "r") as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
+
+def save_history(current_fights):
+    try:
+        with open(DATA_FILE, "w") as f:
+            json.dump(current_fights, f)
+    except Exception as e:
+        print(f"⚠️ Failed to save history: {e}")
+
+def detect_movements(old_data, current_fights):
+    messages = []
+    for fight in current_fights:
+        key = fight["key"]
+        old = old_data.get(key, {})
+        for fk in ["fighter1", "fighter2"]:
+            old_odds = old.get(f"{fk}_odds")
+            new_odds = fight.get(f"{fk}_odds")
+            if old_odds != new_odds:
+                old_val = parse_american_odds(old_odds)
+                new_val = parse_american_odds(new_odds)
+                if old_val is not None and new_val is not None:
+                    diff = abs(new_val - old_val)
+                    if diff >= MIN_MOVEMENT_POINTS:
+                        direction = '↑' if new_val > old_val else '↓'
+                        msg = f"🔄 **{key}**\n{fight[fk]} odds moved: {old_odds} → **{new_odds}** ({direction}{diff} pts)"
+                        messages.append(msg)
+    return messages
+
+def send_discord(message):
+    payload = {"content": message}
+    try:
+        requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10)
+        print("📨 Discord message sent")
+    except Exception as e:
+        print("Discord error:", e)
 
 def scrape_ufc_moneyline():
     print(f"🌐 Scraping at {datetime.datetime.now().strftime('%H:%M:%S')}")
@@ -27,117 +79,61 @@ def scrape_ufc_moneyline():
             page = browser.new_page()
 
             def handle_response(response):
+                nonlocal fights
                 if "offering-by-league" in response.url.lower():
+                    print(f"🔥 FOUND OFFERING-BY-LEAGUE → {response.url}")
                     try:
                         data = response.json()
-                        game_offering = data.get("GameOffering", {}) or data.get("data", {}).get("GameOffering", {})
-                        games = game_offering.get("GamesDescription", [])
-
+                        games = data.get("GameOffering", {}).get("GamesDescription", [])
                         print(f"   📌 Found {len(games)} games in GameOffering")
 
-                        # Targeted UFC filter (exactly as you requested)
-                        game_offering_text = str(game_offering).upper()
-                        games_description_text = str(games).upper()
-                        is_ufc_event = "UFC" in game_offering_text or "UFC" in games_description_text
+                        for g in games:
+                            # Buddy's exact structure
+                            game = g.get("Game", g)  # nested "Game" key fallback
+                            
+                            schedule = game.get("ScheduleText", "New MMA Odds").strip()
+                            
+                            # === UFC ONLY FILTER USING SCHEDULETEXT ===
+                            if "UFC" not in schedule.upper():
+                                continue  # Skip PFL, RIZIN, ACA, etc.
 
-                        print(f"   🔥 UFC event detected: {is_ufc_event}")
-
-                        if not is_ufc_event:
-                            print("   → Not a UFC event, skipping")
-                            return
-
-                        # FIXED EXTRACTION: go one level deeper into "Game"
-                        for game in games:
-                            inner = game.get("Game", game)   # <--- this was the missing piece
-
-                            f1 = (inner.get("AwayTeam") or inner.get("Participant1") or inner.get("Team1") or inner.get("Away") or "Unknown")
-                            f2 = (inner.get("HomeTeam") or inner.get("Participant2") or inner.get("Team2") or inner.get("Home") or "Unknown")
-
-                            fight_key = f"{f1} vs {f2}"
-
-                            away_line = inner.get("AwayLine") or inner.get("AwayTeamLine") or {}
-                            home_line = inner.get("HomeLine") or inner.get("HomeTeamLine") or {}
-
+                            fighter1 = game.get("AwayTeam", "Unknown")
+                            fighter2 = game.get("HomeTeam", "Unknown")
+                            
+                            # Odds extraction (buddy's path)
+                            away_line = game.get("AwayLine", {}) or {}
+                            home_line = game.get("HomeLine", {}) or {}
                             odds1 = (away_line.get("MoneyLine", {}).get("Line") or 
-                                     away_line.get("MoneyLine") or 
-                                     away_line.get("Line") or "N/A")
+                                    away_line.get("Line") or "N/A")
                             odds2 = (home_line.get("MoneyLine", {}).get("Line") or 
-                                     home_line.get("MoneyLine") or 
-                                     home_line.get("Line") or "N/A")
+                                    home_line.get("Line") or "N/A")
 
-                            if f1 != "Unknown" and f2 != "Unknown" and odds1 != "N/A" and odds2 != "N/A":
-                                fights.append({
-                                    "fight": fight_key,
-                                    "fighter1": f1,
-                                    "fighter1_odds": str(odds1),
-                                    "fighter2": f2,
-                                    "fighter2_odds": str(odds2),
-                                    "timestamp": datetime.datetime.now().isoformat()
-                                })
-                                print(f"✅ Found fight: {fight_key} | {odds1} vs {odds2}")
+                            if fighter1 == "Unknown" or fighter2 == "Unknown":
+                                continue
 
+                            fight_key = f"{fighter1} vs {fighter2}"
+                            fights.append({
+                                "key": fight_key,
+                                "fighter1": fighter1,
+                                "fighter2": fighter2,
+                                "fighter1_odds": odds1,
+                                "fighter2_odds": odds2,
+                                "schedule": schedule
+                            })
+                            print(f"✅ Found UFC fight: {fight_key} | {odds1} vs {odds2} | {schedule}")
+
+                        print(f"✅ FINAL UFC FIGHTS SCRAPED: {len(fights)}")
                     except Exception as e:
-                        print(f"   JSON parse error: {e}")
+                        print(f"❌ JSON parse error: {e}")
 
             page.on("response", handle_response)
-
-            page.goto(URL, wait_until="load", timeout=60000)
-            page.wait_for_timeout(20000)
+            page.goto(URL, wait_until="load", timeout=30000)
+            page.wait_for_timeout(15000)  # Wait for dynamic content
             browser.close()
-
-        print(f"✅ Scraped {len(fights)} potential fights")
-        return fights
-
     except Exception as e:
         print(f"❌ Playwright error: {e}")
-        return []
 
-# ====================== REST OF CODE ======================
-def load_history():
-    try:
-        with open(DATA_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return {}
-
-def save_history(current_fights):
-    with open(DATA_FILE, "w") as f:
-        json.dump({f["fight"]: f for f in current_fights}, f, indent=2)
-
-def parse_american_odds(odds_str):
-    if not odds_str: return None
-    cleaned = str(odds_str).strip()
-    if cleaned.startswith(('+', '-')) and cleaned[1:].isdigit():
-        return int(cleaned)
-    return None
-
-def detect_movements(old_data, new_fights):
-    messages = []
-    for fight in new_fights:
-        key = fight["fight"]
-        if key in old_data:
-            old = old_data[key]
-            for fk in ["fighter1", "fighter2"]:
-                old_odds = old.get(f"{fk}_odds")
-                new_odds = fight.get(f"{fk}_odds")
-                if old_odds != new_odds:
-                    old_val = parse_american_odds(old_odds)
-                    new_val = parse_american_odds(new_odds)
-                    if old_val is not None and new_val is not None:
-                        diff = abs(new_val - old_val)
-                        if diff >= MIN_MOVEMENT_POINTS:
-                            direction = '↑' if new_val > old_val else '↓'
-                            msg = f"🔄 **{key}**\n{fight[fk]} odds moved: {old_odds} → **{new_odds}** ({direction}{diff} pts)"
-                            messages.append(msg)
-    return messages
-
-def send_discord(message):
-    payload = {"content": message}
-    try:
-        requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10)
-        print("📨 Discord message sent")
-    except Exception as e:
-        print("Discord error:", e)
+    return fights
 
 if __name__ == "__main__":
     while True:
@@ -150,7 +146,7 @@ if __name__ == "__main__":
                 send_discord(msg)
             save_history(current_fights)
         else:
-            print("⚠️ No fights found this cycle")
+            print("⚠️ No UFC fights found this cycle")
 
         print(f"⏳ Sleeping {POLL_INTERVAL_SECONDS} seconds...")
         time.sleep(POLL_INTERVAL_SECONDS)
