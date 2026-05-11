@@ -5,7 +5,7 @@ import datetime
 import requests
 from playwright.sync_api import sync_playwright
 
-print("🚀 UFC BetOnline Monitor started (v43 - FIXED INT ODDS + SCHEDULETEXT FILTER)")
+print("🚀 UFC BetOnline Monitor started (v44 - FIXED HISTORY DICT + SAFE ODDS)")
 
 # ========================= CONFIG =========================
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
@@ -20,8 +20,8 @@ if not DISCORD_WEBHOOK_URL:
     raise ValueError("Missing DISCORD_WEBHOOK_URL")
 
 def parse_american_odds(odds):
-    """Handle both int (from JSON) and str odds safely"""
-    if odds is None or odds == "N/A":
+    """Safely convert int, float, or str odds"""
+    if odds is None or odds == "N/A" or odds == "":
         return None
     if isinstance(odds, (int, float)):
         return int(odds)
@@ -32,18 +32,27 @@ def parse_american_odds(odds):
     return None
 
 def load_history():
+    """Load history as dict. Handles old list format automatically."""
     if os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE, "r") as f:
-                return json.load(f)
-        except:
+                data = json.load(f)
+            # Migrate old list format to dict
+            if isinstance(data, list):
+                print("🔄 Migrating old history list → dict format...")
+                return {fight.get("key"): fight for fight in data if isinstance(fight, dict) and "key" in fight}
+            return data
+        except Exception as e:
+            print(f"⚠️ History load error: {e}")
             return {}
     return {}
 
 def save_history(current_fights):
+    """Always save as dict {fight_key: fight_data}"""
+    history_dict = {fight["key"]: fight for fight in current_fights if "key" in fight}
     try:
         with open(DATA_FILE, "w") as f:
-            json.dump(current_fights, f)
+            json.dump(history_dict, f, indent=2)
     except Exception as e:
         print(f"⚠️ Failed to save history: {e}")
 
@@ -62,7 +71,7 @@ def detect_movements(old_data, current_fights):
                     diff = abs(new_val - old_val)
                     if diff >= MIN_MOVEMENT_POINTS:
                         direction = '↑' if new_val > old_val else '↓'
-                        msg = f"📈 **{key}** {old_odds} → **{new_odds}** ({direction}{diff} pts)\n{fight[fk]}"
+                        msg = f"🔄 **{key}**\n{fight[fk]} odds moved: {old_odds} → **{new_odds}** ({direction}{diff} pts)"
                         messages.append(msg)
     return messages
 
@@ -92,7 +101,7 @@ def scrape_ufc_moneyline():
                         print(f"   📌 Found {len(games)} games in GameOffering")
 
                         for g in games:
-                            game = g.get("Game", g)   # nested structure
+                            game = g.get("Game", g)
                             schedule = game.get("ScheduleText", "New MMA Odds").strip()
 
                             if "UFC" not in schedule.upper():
@@ -116,7 +125,7 @@ def scrape_ufc_moneyline():
                                 "key": fight_key,
                                 "fighter1": fighter1,
                                 "fighter2": fighter2,
-                                "fighter1_odds": str(odds1),   # store as string for consistency
+                                "fighter1_odds": str(odds1),
                                 "fighter2_odds": str(odds2),
                                 "schedule": schedule
                             })
