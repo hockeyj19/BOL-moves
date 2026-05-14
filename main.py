@@ -66,19 +66,19 @@ def detect_movements(old_data, current_fights):
                 if old_val is not None and new_val is not None:
                     diff = abs(new_val - old_val)
                     if diff >= MIN_MOVEMENT_POINTS:
-                        # Determine if line got BETTER or WORSE for this fighter
+                        # === NEW: 🔺 = better for fighter, 🔻 = worse for fighter ===
                         is_better = False
                         if old_val < 0 and new_val < 0:           # favorite
                             is_better = new_val < old_val         # more negative = better
                         elif old_val > 0 and new_val > 0:         # underdog
-                            is_better = new_val > old_val         # higher positive = better
+                            is_better = new_val > old_val         # larger positive = better
                         else:
                             is_better = new_val < old_val
 
-                        emoji = "📈" if is_better else "📉"
+                        emoji = "🔺" if is_better else "🔻"
 
-                        # YOUR EXACT NEW FORMAT
-                        msg = f"{fight[fk]} {old_odds} ➡️ {new_odds} / {emoji}{diff}pts\n*{key}*"
+                        # === YOUR EXACT REQUESTED FORMAT ===
+                        msg = f"{fight[fk]} {old_odds} {emoji} {new_odds}\n*{key}*"
                         messages.append(msg)
     return messages
 
