@@ -5,7 +5,7 @@ import datetime
 import requests
 from playwright.sync_api import sync_playwright
 
-print("🚀 UFC BetOnline Monitor started (v46 - YOUR EXACT DISCORD FORMAT)")
+print("🚀 UFC BetOnline Monitor started (v49 - YOUR NEW EXACT FORMAT)")
 
 # ========================= CONFIG =========================
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
@@ -20,7 +20,6 @@ if not DISCORD_WEBHOOK_URL:
     raise ValueError("Missing DISCORD_WEBHOOK_URL")
 
 def parse_american_odds(odds):
-    """Safely convert int, float, or str odds"""
     if odds is None or odds == "N/A" or odds == "":
         return None
     if isinstance(odds, (int, float)):
@@ -32,7 +31,6 @@ def parse_american_odds(odds):
     return None
 
 def load_history():
-    """Load history as dict. Handles old list format automatically."""
     if os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE, "r") as f:
@@ -47,7 +45,6 @@ def load_history():
     return {}
 
 def save_history(current_fights):
-    """Always save as dict {fight_key: fight_data}"""
     history_dict = {fight["key"]: fight for fight in current_fights if "key" in fight}
     try:
         with open(DATA_FILE, "w") as f:
@@ -58,7 +55,7 @@ def save_history(current_fights):
 def detect_movements(old_data, current_fights):
     messages = []
     for fight in current_fights:
-        key = fight["key"]                    # full matchup
+        key = fight["key"]
         old = old_data.get(key, {})
         for fk in ["fighter1", "fighter2"]:
             old_odds = old.get(f"{fk}_odds")
@@ -69,9 +66,19 @@ def detect_movements(old_data, current_fights):
                 if old_val is not None and new_val is not None:
                     diff = abs(new_val - old_val)
                     if diff >= MIN_MOVEMENT_POINTS:
-                        direction = '↑' if new_val > old_val else '↓'
-                        # YOUR EXACT REQUESTED FORMAT
-                        msg = f"{fight[fk]} {old_odds} → {new_odds} ({direction}{diff} pts)\n{key}"
+                        # Determine if line got BETTER or WORSE for this fighter
+                        is_better = False
+                        if old_val < 0 and new_val < 0:           # favorite
+                            is_better = new_val < old_val         # more negative = better
+                        elif old_val > 0 and new_val > 0:         # underdog
+                            is_better = new_val > old_val         # higher positive = better
+                        else:
+                            is_better = new_val < old_val
+
+                        emoji = "📈" if is_better else "📉"
+
+                        # YOUR EXACT NEW FORMAT
+                        msg = f"{fight[fk]} {old_odds} ➡️ {new_odds} / {emoji}{diff}pts\n*{key}*"
                         messages.append(msg)
     return messages
 
