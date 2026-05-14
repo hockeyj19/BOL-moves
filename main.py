@@ -71,7 +71,7 @@ def detect_movements(old_data, current_fights):
                     if diff >= MIN_MOVEMENT_POINTS:
                         direction = '↑' if new_val > old_val else '↓'
                         # YOUR EXACT REQUESTED FORMAT
-                        msg = f"📈 **{fight[fk]}** {old_odds} → **{new_odds}** ({direction}{diff} pts)\n{key}"
+                        msg = f"{fight[fk]} {old_odds} → {new_odds} ({direction}{diff} pts)\n{key}"
                         messages.append(msg)
     return messages
 
