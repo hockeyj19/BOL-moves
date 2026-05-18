@@ -111,8 +111,10 @@ def scrape_ufc_moneyline():
                             game = g.get("Game", g)
                             schedule = game.get("ScheduleText", "New MMA Odds").strip()
 
-                            if "UFC" not in schedule.upper():
-                                continue
+                            # === UFC ONLY FILTER: Keep real UFC, skip UFC BJJ ===
+schedule_upper = schedule.upper()
+if "UFC" not in schedule_upper or "BJJ" in schedule_upper:
+    continue
 
                             fighter1 = game.get("AwayTeam", "Unknown")
                             fighter2 = game.get("HomeTeam", "Unknown")
