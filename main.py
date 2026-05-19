@@ -5,7 +5,7 @@ import datetime
 import requests
 from playwright.sync_api import sync_playwright
 
-print("🚀 UFC BetOnline Monitor started (v49 - YOUR NEW EXACT FORMAT)")
+print("🚀 UFC BetOnline Monitor started (v49 - UFC ONLY)")
 
 # ========================= CONFIG =========================
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
@@ -66,18 +66,16 @@ def detect_movements(old_data, current_fights):
                 if old_val is not None and new_val is not None:
                     diff = abs(new_val - old_val)
                     if diff >= MIN_MOVEMENT_POINTS:
-                        # === NEW: 🔺 = better for fighter, 🔻 = worse for fighter ===
                         is_better = False
                         if old_val < 0 and new_val < 0:           # favorite
-                            is_better = new_val < old_val         # more negative = better
+                            is_better = new_val < old_val
                         elif old_val > 0 and new_val > 0:         # underdog
-                            is_better = new_val > old_val         # larger positive = better
+                            is_better = new_val > old_val
                         else:
                             is_better = new_val < old_val
 
                         emoji = "🔺" if is_better else "🔻"
 
-                        # === YOUR EXACT REQUESTED FORMAT ===
                         msg = f"{fight[fk]} {old_odds} {emoji} {new_odds}\n*{key}*"
                         messages.append(msg)
     return messages
@@ -110,11 +108,11 @@ def scrape_ufc_moneyline():
                         for g in games:
                             game = g.get("Game", g)
                             schedule = game.get("ScheduleText", "New MMA Odds").strip()
+                            schedule_upper = schedule.upper()
 
                             # === UFC ONLY FILTER: Keep real UFC, skip UFC BJJ ===
-schedule_upper = schedule.upper()
-if "UFC" not in schedule_upper or "BJJ" in schedule_upper:
-    continue
+                            if "UFC" not in schedule_upper or "BJJ" in schedule_upper:
+                                continue
 
                             fighter1 = game.get("AwayTeam", "Unknown")
                             fighter2 = game.get("HomeTeam", "Unknown")
